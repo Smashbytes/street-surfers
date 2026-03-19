@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Street Surfers</title>
+    <meta name="description" content="Your daily commute, handled. Track your transport, monitor your driver in real time, and get to work or school safely — with Street Surfers." />
+    <meta name="author" content="Street Surfers" />
+    <meta name="theme-color" content="#D01C00" />
+
+    <link rel="manifest" href="/manifest.json" />
+
+    <!-- iOS PWA support -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Street Surfers" />
+
+    <!-- Preconnect to Supabase to shave 100-300ms off first API call on slow SA mobile data -->
+    <link rel="preconnect" href="https://bhlrbcbjduuvoowpuvei.supabase.co" crossorigin />
+    <link rel="dns-prefetch" href="https://bhlrbcbjduuvoowpuvei.supabase.co" />
+
+    <link rel="icon" type="image/svg+xml" href="/logo.svg" />
+    <link rel="icon" type="image/png" href="/favicon.png" />
+    <link rel="apple-touch-icon" href="/favicon.png" />
+
+    <!-- Open Graph -->
+    <meta property="og:title" content="Street Surfers" />
+    <meta property="og:description" content="Your daily commute, handled. Track your transport, monitor your driver in real time, and get to work or school safely — with Street Surfers." />
+    <meta property="og:type" content="website" />
+    <meta property="og:image" content="/og-image.jpg" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+
+    <!-- Twitter -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:site" content="@StreetSurfers" />
+    <meta name="twitter:title" content="Street Surfers" />
+    <meta name="twitter:description" content="Your daily commute, handled. Track your transport, monitor your driver in real time, and get to work or school safely — with Street Surfers." />
+    <meta name="twitter:image" content="/og-image.jpg" />
+  </head>
+
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

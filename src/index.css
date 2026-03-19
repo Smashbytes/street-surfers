@@ -1,0 +1,137 @@
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&family=Inter:wght@400;500;600&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Street Surfers Passenger App - Dark Theme ONLY
+   Brand colors: Black #000000, White #FFFFFF, Accent Red #D01C00
+   Typography: Poppins for headings, Inter for body
+   All colors are HSL
+*/
+
+@layer base {
+  /* Dark theme is the ONLY theme - no light mode */
+  :root,
+  .dark {
+    --background: 0 0% 0%;
+    --foreground: 0 0% 100%;
+
+    --card: 0 0% 7%;
+    --card-foreground: 0 0% 100%;
+
+    --popover: 0 0% 7%;
+    --popover-foreground: 0 0% 100%;
+
+    --primary: 0 0% 100%;
+    --primary-foreground: 0 0% 0%;
+
+    --secondary: 0 0% 12%;
+    --secondary-foreground: 0 0% 100%;
+
+    --muted: 0 0% 18%;
+    --muted-foreground: 0 0% 65%;
+
+    --accent: 7 100% 41%;
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 7 100% 41%;
+    --destructive-foreground: 0 0% 100%;
+
+    --success: 142 76% 36%;
+    --success-foreground: 0 0% 100%;
+
+    --warning: 38 92% 50%;
+    --warning-foreground: 0 0% 0%;
+
+    --border: 0 0% 20%;
+    --input: 0 0% 12%;
+    --ring: 7 100% 41%;
+
+    --radius: 1rem;
+
+    --sidebar-background: 0 0% 5%;
+    --sidebar-foreground: 0 0% 100%;
+    --sidebar-primary: 0 0% 100%;
+    --sidebar-primary-foreground: 0 0% 0%;
+    --sidebar-accent: 0 0% 15%;
+    --sidebar-accent-foreground: 0 0% 100%;
+    --sidebar-border: 0 0% 20%;
+    --sidebar-ring: 7 100% 41%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  html {
+    color-scheme: dark;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-family: 'Inter', sans-serif;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    font-family: 'Poppins', sans-serif;
+    font-weight: 700;
+  }
+}
+
+@layer utilities {
+  .font-display {
+    font-family: 'Poppins', sans-serif;
+    font-weight: 700;
+  }
+
+  .gradient-accent {
+    background: linear-gradient(135deg, hsl(7 100% 41%) 0%, hsl(7 100% 30%) 100%);
+  }
+
+  .gradient-dark {
+    background: linear-gradient(180deg, hsl(0 0% 5%) 0%, hsl(0 0% 0%) 100%);
+  }
+
+  .glow-accent {
+    box-shadow: 0 0 40px hsl(7 100% 41% / 0.4);
+  }
+
+  .safe-bottom {
+    padding-bottom: env(safe-area-inset-bottom, 20px);
+  }
+
+  .safe-top {
+    padding-top: env(safe-area-inset-top, 20px);
+  }
+
+  .text-gradient-accent {
+    background: linear-gradient(135deg, hsl(7 100% 50%) 0%, hsl(7 100% 35%) 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+}
+
+/* PWA touch optimizations */
+html {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Prevent pull-to-refresh on mobile */
+body {
+  overscroll-behavior-y: contain;
+}
+
+/* Hide scrollbar but keep functionality */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}

@@ -1,0 +1,29 @@
+{
+  "name": "Street Surfers",
+  "short_name": "Street Surfers",
+  "description": "Your daily commute, handled. Track your transport and driver in real time — with Street Surfers.",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#000000",
+  "theme_color": "#D01C00",
+  "icons": [
+    {
+      "src": "/logo.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/favicon.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/favicon.ico",
+      "sizes": "16x16 32x32 48x48 64x48 64x64 128x128 256x256",
+      "type": "image/x-icon"
+    }
+  ]
+}
