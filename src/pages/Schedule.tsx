@@ -64,6 +64,7 @@ export default function Schedule() {
       setAvailability(data || []);
     } catch (error) {
       console.error('Error fetching availability:', error);
+      toast({ title: 'Error', description: 'Failed to load your schedule. Please try again.', variant: 'destructive' });
     } finally {
       setLoading(false);
     }
