@@ -21,10 +21,17 @@ export default defineConfig(({ mode }) => ({
       output: {
         manualChunks(id) {
           if (!id.includes("node_modules")) return;
-          if (id.includes("react-dom") || id.includes("react-router") || id.includes("react/")) return "vendor-react";
-          if (id.includes("@supabase")) return "vendor-supabase";
-          if (id.includes("leaflet") || id.includes("react-leaflet")) return "vendor-maps";
-          if (id.includes("@radix-ui")) return "vendor-ui";
+          // Match exact react packages using node_modules path segments
+          if (
+            id.includes("/node_modules/react/") ||
+            id.includes("/node_modules/react-dom/") ||
+            id.includes("/node_modules/react-router") ||
+            id.includes("/node_modules/scheduler/") ||
+            id.includes("/node_modules/next-themes/")
+          ) return "vendor-react";
+          if (id.includes("/@supabase/") || id.includes("/node_modules/@supabase/")) return "vendor-supabase";
+          if (id.includes("/node_modules/leaflet/") || id.includes("/node_modules/react-leaflet/")) return "vendor-maps";
+          if (id.includes("/@radix-ui/") || id.includes("/node_modules/@radix-ui/")) return "vendor-ui";
           return "vendor";
         },
       },
