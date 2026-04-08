@@ -90,6 +90,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const fetchUserData = async (userId: string, userEmail?: string, userMeta?: Record<string, string>) => {
     try {
+      // Check if user is a driver — if so, don't create passenger records
+      const { data: driverRole } = await supabase
+        .from('user_roles')
+        .select('role')
+        .eq('user_id', userId)
+        .eq('role', 'driver')
+        .maybeSingle();
+
+      if (driverRole) {
+        // This is a driver account — don't create passenger records
+        console.log('Driver logged into Passengers app — skipping passenger record creation');
+        setProfile(null);
+        setPassenger(null);
+        return;
+      }
+
       // Fetch profile — create one if the trigger failed
       let { data: profileData } = await supabase
         .from('profiles')

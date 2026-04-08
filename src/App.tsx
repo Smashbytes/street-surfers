@@ -1,16 +1,18 @@
-import { lazy, Suspense } from "react";
+import { lazy, Suspense, useEffect } from "react";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { PWAInstallPrompt } from "@/components/PWAInstallPrompt";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Routes, Route, useNavigate, useLocation } from "react-router-dom";
 import { AuthProvider } from "@/hooks/useAuth";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 
 // Eagerly loaded — needed before auth resolves
 import Auth from "./pages/Auth";
+import AuthCallback from "./pages/AuthCallback";
+import SetPassword from "./pages/SetPassword";
 import NotFound from "./pages/NotFound";
 import PrivacyPolicy from "./pages/PrivacyPolicy";
 
@@ -29,6 +31,21 @@ const PageLoader = () => (
   </div>
 );
 
+// Redirect magic links to /auth/callback if access_token in hash
+const TokenRedirector = () => {
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  useEffect(() => {
+    // Check if hash contains access_token (Supabase magic link)
+    if (location.hash && location.hash.includes('access_token')) {
+      navigate('/auth/callback', { replace: true });
+    }
+  }, [location.hash, navigate]);
+
+  return null;
+};
+
 const queryClient = new QueryClient();
 
 const App = () => (
@@ -40,8 +57,11 @@ const App = () => (
           <Sonner />
           <PWAInstallPrompt />
           <BrowserRouter>
+            <TokenRedirector />
             <Routes>
               <Route path="/auth" element={<Auth />} />
+              <Route path="/auth/callback" element={<AuthCallback />} />
+              <Route path="/auth/set-password" element={<SetPassword />} />
               <Route path="/privacy-policy" element={<PrivacyPolicy />} />
               <Route path="/onboarding" element={
                 <ProtectedRoute requireOnboarding={false}>
