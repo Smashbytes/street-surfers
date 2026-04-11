@@ -109,25 +109,34 @@ export function useTripDetails(tripId: string | undefined) {
         }
       }
 
-      // Fetch driver if assigned
+      // Fetch driver if assigned — use drivers_with_profile view which bypasses
+      // the profiles RLS that blocks passengers from reading other users' profiles.
       let driver: Driver | undefined;
       if (tripData.driver_id) {
         const { data: driverData } = await supabase
-          .from('drivers')
-          .select('*')
+          .from('drivers_with_profile' as any)
+          .select('id, user_id, license_number, vehicle_make, vehicle_model, vehicle_color, license_plate, vehicle_photo_url, is_active, is_online, full_name, avatar_url, phone')
           .eq('id', tripData.driver_id)
-          .single();
+          .maybeSingle();
 
         if (driverData) {
-          const { data: driverProfile } = await supabase
-            .from('profiles')
-            .select('full_name, avatar_url, phone')
-            .eq('user_id', driverData.user_id)
-            .single();
-
+          const d = driverData as any;
           driver = {
-            ...driverData,
-            profile: driverProfile || undefined,
+            id: d.id,
+            user_id: d.user_id,
+            license_number: d.license_number,
+            vehicle_make: d.vehicle_make,
+            vehicle_model: d.vehicle_model,
+            vehicle_color: d.vehicle_color,
+            license_plate: d.license_plate,
+            vehicle_photo_url: d.vehicle_photo_url,
+            is_active: d.is_active,
+            is_online: d.is_online,
+            profile: {
+              full_name: d.full_name,
+              avatar_url: d.avatar_url,
+              phone: d.phone,
+            },
           };
         }
       }

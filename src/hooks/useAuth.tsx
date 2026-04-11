@@ -133,33 +133,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       setProfile(profileData);
 
-      // Fetch passenger record — create one if the trigger failed
-      let { data: passengerData } = await supabase
+      // Fetch passenger record — if none exists, the user is not a registered passenger
+      const { data: passengerData } = await supabase
         .from('passengers')
         .select('*')
         .eq('user_id', userId)
         .maybeSingle();
 
-      if (!passengerData) {
-        const { data: created, error: passengerUpsertError } = await supabase
-          .from('passengers')
-          .upsert(
-            { user_id: userId, onboarding_completed: false, is_active: true, account_status: 'active', ride_type: 'dual' },
-            { onConflict: 'user_id', ignoreDuplicates: true }
-          )
-          .select()
-          .maybeSingle();
-        if (passengerUpsertError) console.error('Passenger fallback upsert failed:', passengerUpsertError);
-        passengerData = created;
-
-        // Also ensure user_roles row exists (trigger may have failed before reaching it)
-        const { error: roleUpsertError } = await supabase
-          .from('user_roles')
-          .upsert({ user_id: userId, role: 'passenger' }, { onConflict: 'user_id,role', ignoreDuplicates: true });
-        if (roleUpsertError) console.error('user_roles fallback upsert failed:', roleUpsertError);
-      }
-
-      setPassenger(passengerData);
+      setPassenger(passengerData ?? null);
     } catch (error) {
       console.error('Error fetching user data:', error);
     }

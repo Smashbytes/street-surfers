@@ -102,11 +102,9 @@ export default function Auth() {
       }
       setIsLoading(false);
     } else {
-      // Success. Keep the button in loading state — onAuthStateChange will fire,
-      // setLoading(true) will be set in useAuth, fetchUserData will complete,
-      // then the redirect guard at the top of this component will navigate away.
-      // Safety valve: if the redirect never fires within 10s, release the spinner.
-      setTimeout(() => setIsLoading(false), 10000);
+      // Success — show the email confirmation screen.
+      setIsLoading(false);
+      setSignupEmailSent(true);
     }
   };
 

@@ -2,17 +2,21 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { Loader2, AlertCircle, CheckCircle2 } from 'lucide-react';
+import type { Session } from '@supabase/supabase-js';
 import logo from '@/assets/logo.webp';
 
 /**
  * Universal Auth Callback Handler
  *
  * This page handles the Supabase Auth callback for ALL roles:
- * - Drivers → redirect to Drive app's /auth/callback
+ * - Drivers → redirect to Drive app's /auth/callback with session token
  * - Passengers → proceed with password setup
- * - Admins → show error (admin accounts don't use invite flow)
  *
- * The Supabase site_url is set to this page, so all magic links land here first.
+ * The invite email link goes through Supabase's verify endpoint, which then
+ * redirects here with tokens in the URL hash.  The Supabase JS SDK processes
+ * the hash asynchronously via onAuthStateChange — we MUST wait for that event
+ * rather than calling getSession() immediately (which returns null on a fresh
+ * page load before the hash has been processed).
  */
 
 const AuthCallback = () => {
@@ -21,23 +25,18 @@ const AuthCallback = () => {
   const [message, setMessage] = useState('');
 
   useEffect(() => {
-    const handleCallback = async () => {
+    let handled = false;
+
+    const routeByRole = async (session: Session) => {
+      if (handled) return;
+      handled = true;
+
       try {
-        // Supabase JS SDK automatically exchanges the hash token into a session
-        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-
-        if (sessionError || !session) {
-          setStatus('error');
-          setMessage('This link is invalid or has expired. Please request a new invite.');
-          return;
-        }
-
-        // Check the user's role from user_roles table
-        const { data: roleData, error: roleError } = await supabase
+        // Check the user's role from user_roles table.
+        const { data: rolesData, error: roleError } = await supabase
           .from('user_roles')
           .select('role')
-          .eq('user_id', session.user.id)
-          .maybeSingle();
+          .eq('user_id', session.user.id);
 
         if (roleError) {
           console.error('Role lookup error:', roleError);
@@ -46,34 +45,39 @@ const AuthCallback = () => {
           return;
         }
 
-        const userRole = roleData?.role;
+        const roles = (rolesData ?? []).map((r: { role: string }) => r.role);
+        // Also check user_metadata as fallback (set during inviteUserByEmail)
+        const metaRole = session.user.user_metadata?.role as string | undefined;
+
+        // Prioritise driver — if the user has a driver role OR was invited as
+        // a driver, route them to the Drive app regardless of other roles.
+        const userRole = roles.includes('driver') || metaRole === 'driver'
+          ? 'driver'
+          : roles.includes('passenger')
+          ? 'passenger'
+          : roles[0] ?? metaRole ?? null;
 
         if (userRole === 'driver') {
-          // This is a driver — redirect to the Drive app's callback handler
           setStatus('driver');
-          setMessage('Redirecting to Driver App...');
+          setMessage('Redirecting to Driver App…');
 
-          // Construct the redirect URL with the session token in the hash
           const driverAppUrl = import.meta.env.VITE_DRIVER_APP_URL || 'http://localhost:5174';
-          const { data: { session: refreshedSession } } = await supabase.auth.refreshSession();
 
-          if (refreshedSession?.access_token) {
-            // Redirect to Driver app's callback with the token in the hash
-            window.location.href = `${driverAppUrl}/auth/callback#access_token=${refreshedSession.access_token}&refresh_token=${refreshedSession.refresh_token}&expires_in=3600&token_type=Bearer`;
-          } else {
-            setStatus('error');
-            setMessage('Failed to obtain session token. Please request a new invite.');
-          }
+          // Pass the current session tokens to the Drive app via hash fragment
+          window.location.href = `${driverAppUrl}/auth/callback#access_token=${session.access_token}&refresh_token=${session.refresh_token}&expires_in=${session.expires_in}&token_type=bearer`;
         } else if (userRole === 'passenger') {
-          // This is a passenger — redirect to the password setup flow
           setStatus('passenger');
-          setMessage('Setting up your account...');
+          setMessage('Setting up your account…');
           setTimeout(() => {
             navigate('/auth/set-password', { replace: true, state: { fromCallback: true } });
           }, 500);
         } else {
           setStatus('error');
-          setMessage(`Account type "${userRole}" is not supported via this link. Please contact your administrator.`);
+          setMessage(
+            userRole
+              ? `Account type "${userRole}" is not supported via this link.`
+              : 'No role found for your account. Please contact your administrator.'
+          );
         }
       } catch (err) {
         console.error('Auth callback error:', err);
@@ -82,7 +86,39 @@ const AuthCallback = () => {
       }
     };
 
-    handleCallback();
+    // Listen for the auth state change that fires once the SDK processes the
+    // URL hash (access_token / refresh_token / code).  This is the ONLY
+    // reliable way to get the session from a redirect — getSession() returns
+    // null until the hash has been consumed.
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      (event, session) => {
+        if (handled) return;
+
+        if (session && (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'INITIAL_SESSION')) {
+          routeByRole(session);
+        }
+      }
+    );
+
+    // Safety net: if the SDK already has a session (e.g. page reloaded while
+    // still authenticated), grab it directly after a short delay to give the
+    // auth state listener time to fire first.
+    const fallbackTimer = setTimeout(async () => {
+      if (handled) return;
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session) {
+        routeByRole(session);
+      } else if (!handled) {
+        // No session after waiting — link is truly invalid/expired
+        setStatus('error');
+        setMessage('This link is invalid or has expired. Please request a new invite.');
+      }
+    }, 3000);
+
+    return () => {
+      subscription.unsubscribe();
+      clearTimeout(fallbackTimer);
+    };
   }, [navigate]);
 
   return (
@@ -104,14 +140,14 @@ const AuthCallback = () => {
 
           {status === 'driver' && (
             <div className="text-center space-y-4">
-              <CheckCircle2 className="h-8 w-8 text-success mx-auto" />
+              <CheckCircle2 className="h-8 w-8 text-green-500 mx-auto" />
               <p className="text-muted-foreground">{message}</p>
             </div>
           )}
 
           {status === 'passenger' && (
             <div className="text-center space-y-4">
-              <CheckCircle2 className="h-8 w-8 text-success mx-auto" />
+              <CheckCircle2 className="h-8 w-8 text-green-500 mx-auto" />
               <p className="text-muted-foreground">{message}</p>
             </div>
           )}

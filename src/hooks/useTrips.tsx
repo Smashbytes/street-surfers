@@ -104,32 +104,36 @@ export function useTrips() {
       const driverIds = tripsData
         ?.filter(t => t.driver_id)
         .map(t => t.driver_id) || [];
-      
+
       let driversMap: Record<string, Driver> = {};
-      
+
       if (driverIds.length > 0) {
+        // Use the drivers_with_profile view — it includes full_name/avatar from profiles
+        // and has GRANT SELECT TO authenticated, bypassing the profiles RLS that blocks
+        // passengers from reading other users' profiles.
         const { data: driversData } = await supabase
-          .from('drivers')
-          .select('*')
+          .from('drivers_with_profile' as any)
+          .select('id, user_id, license_number, vehicle_make, vehicle_model, vehicle_color, license_plate, vehicle_photo_url, is_active, is_online, full_name, avatar_url, phone')
           .in('id', driverIds);
 
         if (driversData) {
-          // Fetch profiles for drivers
-          const driverUserIds = driversData.map(d => d.user_id);
-          const { data: profilesData } = await supabase
-            .from('profiles')
-            .select('user_id, full_name, avatar_url, phone')
-            .in('user_id', driverUserIds);
-
-          const profilesMap = profilesData?.reduce((acc, p) => {
-            acc[p.user_id] = p;
-            return acc;
-          }, {} as Record<string, any>) || {};
-
-          driversData.forEach(driver => {
+          (driversData as any[]).forEach((driver: any) => {
             driversMap[driver.id] = {
-              ...driver,
-              profile: profilesMap[driver.user_id],
+              id: driver.id,
+              user_id: driver.user_id,
+              license_number: driver.license_number,
+              vehicle_make: driver.vehicle_make,
+              vehicle_model: driver.vehicle_model,
+              vehicle_color: driver.vehicle_color,
+              license_plate: driver.license_plate,
+              vehicle_photo_url: driver.vehicle_photo_url,
+              is_active: driver.is_active,
+              is_online: driver.is_online,
+              profile: {
+                full_name: driver.full_name,
+                avatar_url: driver.avatar_url,
+                phone: driver.phone,
+              },
             };
           });
         }
