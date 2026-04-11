@@ -32,6 +32,7 @@ export interface TripPassenger {
   dropoff_lat: number | null;
   dropoff_lng: number | null;
   seat_number: number | null;
+  pickup_order: number | null;
   status: 'confirmed' | 'picked_up' | 'dropped_off' | 'no_show' | 'cancelled';
   pickup_time: string | null;
   dropoff_time: string | null;

@@ -321,7 +321,7 @@ export default function TripDetails() {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="flex items-center gap-4">
+                <div className="flex items-center gap-4 mb-4">
                   <Avatar className="h-16 w-16 border-2 border-accent">
                     <AvatarImage src={trip.driver.profile?.avatar_url || undefined} />
                     <AvatarFallback className="bg-muted text-foreground text-xl">
@@ -335,16 +335,22 @@ export default function TripDetails() {
                     <div className="flex items-center gap-2 text-sm text-muted-foreground mt-1">
                       <Car className="h-4 w-4" />
                       <span>
-                        {trip.driver.vehicle_color} {trip.driver.vehicle_make} {trip.driver.vehicle_model}
+                        {[trip.driver.vehicle_color, trip.driver.vehicle_make, trip.driver.vehicle_model].filter(Boolean).join(' ')}
                       </span>
                     </div>
                     {trip.driver.license_plate && (
-                      <p className="text-sm font-mono text-accent font-bold mt-1">
+                      <p className="text-base font-mono text-accent font-bold mt-1 tracking-widest">
                         {trip.driver.license_plate}
                       </p>
                     )}
                   </div>
                 </div>
+                {trip.driver.profile?.phone && (
+                  <div className="flex items-center gap-3 p-3 rounded-xl bg-secondary">
+                    <Phone className="h-4 w-4 text-accent flex-shrink-0" />
+                    <span className="text-sm text-foreground font-medium">{trip.driver.profile.phone}</span>
+                  </div>
+                )}
               </CardContent>
             </Card>
           ) : (
@@ -372,6 +378,9 @@ export default function TripDetails() {
             <CardContent className="space-y-3">
               {trip.all_passengers.map((tp, index) => {
                 const isYou = tp.passenger_id === passenger?.id;
+                const passengerLabel = isYou
+                  ? (tp.passenger?.profile?.full_name || 'You')
+                  : `Passenger ${index + 1}`;
                 return (
                   <div
                     key={tp.id}
@@ -380,7 +389,7 @@ export default function TripDetails() {
                     }`}
                   >
                     <Avatar className={`h-10 w-10 ${isYou ? 'border-2 border-accent' : ''}`}>
-                      <AvatarImage src={tp.passenger?.profile?.avatar_url || undefined} />
+                      {isYou && <AvatarImage src={tp.passenger?.profile?.avatar_url || undefined} />}
                       <AvatarFallback className="bg-muted text-foreground">
                         <User className="h-5 w-5" />
                       </AvatarFallback>
@@ -388,7 +397,7 @@ export default function TripDetails() {
                     <div className="flex-1">
                       <div className="flex items-center gap-2">
                         <p className={`font-medium ${isYou ? 'text-accent' : 'text-foreground'}`}>
-                          {tp.passenger?.profile?.full_name || 'Passenger'}
+                          {passengerLabel}
                         </p>
                         {isYou && (
                           <Badge className="bg-accent text-accent-foreground text-xs">

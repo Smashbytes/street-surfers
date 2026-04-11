@@ -69,7 +69,7 @@ export function useTripDetails(tripId: string | undefined) {
         .from('trip_passengers')
         .select('*')
         .eq('trip_id', tripId)
-        .order('seat_number', { ascending: true });
+        .order('pickup_order', { ascending: true, nullsFirst: false });
 
       // Fetch passenger profiles
       const passengerIds = allTripPassengers?.map(tp => tp.passenger_id).filter(Boolean) || [];
