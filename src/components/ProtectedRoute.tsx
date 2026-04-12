@@ -2,6 +2,7 @@ import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import { Loader2 } from 'lucide-react';
 import { LockedDashboard } from '@/components/LockedDashboard';
+import { format, addDays, startOfWeek } from 'date-fns';
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
@@ -39,6 +40,18 @@ export function ProtectedRoute({
   // Onboarding check FIRST — new users must complete this before any other gate
   if (passenger && requireOnboarding && !passenger.onboarding_completed) {
     return <Navigate to="/onboarding" replace />;
+  }
+
+  // Sunday schedule gate — force weekly schedule update before app access
+  if (passenger && requireOnboarding && passenger.onboarding_completed && location.pathname !== '/schedule') {
+    const isSunday = new Date().getDay() === 0;
+    if (isSunday) {
+      const nextMon = format(addDays(startOfWeek(new Date(), { weekStartsOn: 0 }), 1), 'yyyy-MM-dd');
+      const alreadySubmitted = localStorage.getItem('ss_schedule_week') === nextMon;
+      if (!alreadySubmitted) {
+        return <Navigate to="/schedule?mode=sunday" replace />;
+      }
+    }
   }
 
   // Access control — only suspension, no payment gate
