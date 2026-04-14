@@ -10,7 +10,7 @@ export interface DriverLocation {
   heading: number | null;
   speed: number | null;
   accuracy: number | null;
-  recorded_at: string;
+  updated_at: string;
 }
 
 export function useDriverLocation(driverId: string | null | undefined) {
@@ -30,7 +30,7 @@ export function useDriverLocation(driverId: string | null | undefined) {
         .from('driver_locations')
         .select('*')
         .eq('driver_id', driverId)
-        .order('recorded_at', { ascending: false })
+        .order('updated_at', { ascending: false })
         .limit(1)
         .maybeSingle();
 
@@ -58,13 +58,15 @@ export function useDriverLocation(driverId: string | null | undefined) {
       .on(
         'postgres_changes',
         {
-          event: 'INSERT',
+          event: '*',
           schema: 'public',
           table: 'driver_locations',
           filter: `driver_id=eq.${driverId}`,
         },
         (payload) => {
-          setLocation(payload.new as DriverLocation);
+          if (payload.new) {
+            setLocation(payload.new as DriverLocation);
+          }
         }
       )
       .subscribe();

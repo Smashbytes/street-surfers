@@ -27,8 +27,8 @@ const driverIcon = new L.Icon({
 });
 
 interface DriverLocation {
-  lat: number;
-  lng: number;
+  latitude: number;
+  longitude: number;
   updated_at: string;
 }
 
@@ -54,9 +54,9 @@ export default function LiveMap() {
     const fetchLocation = async () => {
       const { data } = await supabase
         .from('driver_locations')
-        .select('lat, lng, updated_at')
+        .select('latitude, longitude, updated_at')
         .eq('driver_id', activeTrip.driver_id!)
-        .single();
+        .maybeSingle();
       if (data) setDriverLocation(data);
     };
     fetchLocation();
@@ -74,8 +74,12 @@ export default function LiveMap() {
         },
         (payload) => {
           const row = payload.new as any;
-          if (row?.lat && row?.lng) {
-            setDriverLocation({ lat: row.lat, lng: row.lng, updated_at: row.updated_at });
+          if (row?.latitude != null && row?.longitude != null) {
+            setDriverLocation({
+              latitude: row.latitude,
+              longitude: row.longitude,
+              updated_at: row.updated_at,
+            });
           }
         }
       )
@@ -87,7 +91,7 @@ export default function LiveMap() {
   // Default center: South Africa
   const defaultCenter: [number, number] = [-26.2041, 28.0473];
   const mapCenter: [number, number] = driverLocation
-    ? [driverLocation.lat, driverLocation.lng]
+    ? [driverLocation.latitude, driverLocation.longitude]
     : activeTrip?.origin_lat && activeTrip?.origin_lng
     ? [activeTrip.origin_lat, activeTrip.origin_lng]
     : defaultCenter;
@@ -125,8 +129,8 @@ export default function LiveMap() {
                 />
                 {driverLocation && (
                   <>
-                    <RecenterMap lat={driverLocation.lat} lng={driverLocation.lng} />
-                    <Marker position={[driverLocation.lat, driverLocation.lng]} icon={driverIcon}>
+                    <RecenterMap lat={driverLocation.latitude} lng={driverLocation.longitude} />
+                    <Marker position={[driverLocation.latitude, driverLocation.longitude]} icon={driverIcon}>
                       <Popup>
                         <div className="text-center">
                           <p className="font-semibold">Your Driver</p>

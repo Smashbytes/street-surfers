@@ -15,6 +15,14 @@ interface PassengerWithProfile extends TripPassenger {
   };
 }
 
+interface PassengerProfileRow {
+  id: string;
+  user_id: string;
+  full_name: string | null;
+  avatar_url: string | null;
+  phone: string | null;
+}
+
 export interface TripDetailsData extends Omit<TripWithDetails, 'trip_passenger'> {
   trip_passenger: PassengerWithProfile;
   all_passengers: PassengerWithProfile[];
@@ -77,27 +85,20 @@ export function useTripDetails(tripId: string | undefined) {
 
       if (passengerIds.length > 0) {
         const { data: passengersData } = await supabase
-          .from('passengers')
-          .select('id, user_id')
+          .from('passengers_with_profile' as any)
+          .select('id, user_id, full_name, avatar_url, phone')
           .in('id', passengerIds);
 
         if (passengersData) {
-          const userIds = passengersData.map(p => p.user_id);
-          const { data: profilesData } = await supabase
-            .from('profiles')
-            .select('user_id, full_name, avatar_url, phone')
-            .in('user_id', userIds);
-
-          const profilesMap = profilesData?.reduce((acc, p) => {
-            acc[p.user_id] = p;
-            return acc;
-          }, {} as Record<string, any>) || {};
-
-          const passengersMap = passengersData.reduce((acc, p) => {
+          const passengersMap = (passengersData as PassengerProfileRow[]).reduce((acc, p) => {
             acc[p.id] = {
               id: p.id,
               user_id: p.user_id,
-              profile: profilesMap[p.user_id],
+              profile: {
+                full_name: p.full_name,
+                avatar_url: p.avatar_url,
+                phone: p.phone,
+              },
             };
             return acc;
           }, {} as Record<string, any>);
