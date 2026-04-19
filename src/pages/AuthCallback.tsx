@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { Loader2, AlertCircle, CheckCircle2 } from 'lucide-react';
 import type { Session } from '@supabase/supabase-js';
@@ -12,17 +12,26 @@ import logo from '@/assets/logo.webp';
  * - Drivers → redirect to Drive app's /auth/callback with session token
  * - Passengers → proceed with password setup
  *
- * The invite email link goes through Supabase's verify endpoint, which then
- * redirects here with tokens in the URL hash.  The Supabase JS SDK processes
- * the hash asynchronously via onAuthStateChange — we MUST wait for that event
- * rather than calling getSession() immediately (which returns null on a fresh
- * page load before the hash has been processed).
+ * The invite/confirmation email link goes through Supabase's verify endpoint,
+ * which then redirects here with tokens in the URL hash.  We capture the hash
+ * synchronously on first render (before React Router can strip it), then use
+ * three strategies to establish a session:
+ *   1. onAuthStateChange listener (primary)
+ *   2. Explicit setSession from captured hash tokens (fast path)
+ *   3. getSession fallback after 6 seconds (safety net)
  */
 
 const AuthCallback = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const [status, setStatus] = useState<'checking' | 'driver' | 'passenger' | 'error'>('checking');
   const [message, setMessage] = useState('');
+
+  // Capture hash synchronously during first render — before any useEffect
+  // or React Router navigation can strip it from the URL.
+  const [capturedHash] = useState<string>(
+    () => window.location.hash || (location.state as any)?.hash || ''
+  );
 
   useEffect(() => {
     let handled = false;
@@ -32,7 +41,6 @@ const AuthCallback = () => {
       handled = true;
 
       try {
-        // Check the user's role from user_roles table.
         const { data: rolesData, error: roleError } = await supabase
           .from('user_roles')
           .select('role')
@@ -46,11 +54,8 @@ const AuthCallback = () => {
         }
 
         const roles = (rolesData ?? []).map((r: { role: string }) => r.role);
-        // Also check user_metadata as fallback (set during inviteUserByEmail)
         const metaRole = session.user.user_metadata?.role as string | undefined;
 
-        // Prioritise driver — if the user has a driver role OR was invited as
-        // a driver, route them to the Drive app regardless of other roles.
         const userRole = roles.includes('driver') || metaRole === 'driver'
           ? 'driver'
           : roles.includes('passenger')
@@ -60,10 +65,7 @@ const AuthCallback = () => {
         if (userRole === 'driver') {
           setStatus('driver');
           setMessage('Redirecting to Driver App…');
-
           const driverAppUrl = import.meta.env.VITE_DRIVER_APP_URL || 'http://localhost:5174';
-
-          // Pass the current session tokens to the Drive app via hash fragment
           window.location.href = `${driverAppUrl}/auth/callback#access_token=${session.access_token}&refresh_token=${session.refresh_token}&expires_in=${session.expires_in}&token_type=bearer`;
         } else if (userRole === 'passenger') {
           setStatus('passenger');
@@ -86,40 +88,47 @@ const AuthCallback = () => {
       }
     };
 
-    // Listen for the auth state change that fires once the SDK processes the
-    // URL hash (access_token / refresh_token / code).  This is the ONLY
-    // reliable way to get the session from a redirect — getSession() returns
-    // null until the hash has been consumed.
+    // 1. Primary: listen for auth state change when SDK processes the hash.
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       (event, session) => {
         if (handled) return;
-
         if (session && (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'INITIAL_SESSION')) {
           routeByRole(session);
         }
       }
     );
 
-    // Safety net: if the SDK already has a session (e.g. page reloaded while
-    // still authenticated), grab it directly after a short delay to give the
-    // auth state listener time to fire first.
+    // 2. Fast path: if the captured hash contains tokens, call setSession
+    //    directly. This beats the race where React Router strips the hash
+    //    before the SDK can read it.
+    if (capturedHash && capturedHash.includes('access_token')) {
+      const params = new URLSearchParams(capturedHash.replace(/^#/, ''));
+      const accessToken = params.get('access_token');
+      const refreshToken = params.get('refresh_token');
+      if (accessToken && refreshToken) {
+        supabase.auth.setSession({ access_token: accessToken, refresh_token: refreshToken })
+          .then(({ data }) => { if (data.session) routeByRole(data.session); })
+          .catch(() => {/* let the fallback timer handle it */});
+      }
+    }
+
+    // 3. Final fallback: give the SDK 6 seconds to sort itself out.
     const fallbackTimer = setTimeout(async () => {
       if (handled) return;
       const { data: { session } } = await supabase.auth.getSession();
       if (session) {
         routeByRole(session);
       } else if (!handled) {
-        // No session after waiting — link is truly invalid/expired
         setStatus('error');
         setMessage('This link is invalid or has expired. Please request a new invite.');
       }
-    }, 3000);
+    }, 6000);
 
     return () => {
       subscription.unsubscribe();
       clearTimeout(fallbackTimer);
     };
-  }, [navigate]);
+  }, [navigate, capturedHash]);
 
   return (
     <div className="min-h-screen bg-background relative flex flex-col items-center justify-start p-4 pt-12">

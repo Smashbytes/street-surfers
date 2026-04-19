@@ -42,6 +42,18 @@ interface CompanyStepProps {
 
 type Step = 'search' | 'create-company' | 'select-branch' | 'create-branch';
 
+function composeStreetAddress(selection: AddressSelection, specificNumber: string) {
+  const baseStreet = selection.street || selection.formatted_address;
+  const trimmedNumber = specificNumber.trim();
+  if (!trimmedNumber) return baseStreet;
+
+  const normalizedBase = baseStreet.toLowerCase();
+  const normalizedNumber = trimmedNumber.toLowerCase();
+  if (normalizedBase.startsWith(normalizedNumber)) return baseStreet;
+
+  return `${trimmedNumber} ${baseStreet}`.trim();
+}
+
 export function CompanyStep({ initialCompanyId, initialBranchId, onSubmit, onBack }: CompanyStepProps) {
   const [step, setStep] = useState<Step>('search');
   const [companies, setCompanies] = useState<Company[]>([]);
@@ -58,6 +70,7 @@ export function CompanyStep({ initialCompanyId, initialBranchId, onSubmit, onBac
   const [newCompanyName, setNewCompanyName] = useState('');
   const [newBranchName, setNewBranchName] = useState('');
   const [selectedAddress, setSelectedAddress] = useState<AddressSelection | null>(null);
+  const [specificAddressNumber, setSpecificAddressNumber] = useState('');
 
   useEffect(() => {
     async function fetchCompanies() {
@@ -179,7 +192,7 @@ export function CompanyStep({ initialCompanyId, initialBranchId, onSubmit, onBac
         .from('companies')
         .insert({
           company_name: newCompanyName.trim(),
-          street: selectedAddress.street || selectedAddress.formatted_address,
+          street: composeStreetAddress(selectedAddress, specificAddressNumber),
           suburb: selectedAddress.suburb || null,
           city: selectedAddress.city || null,
           province: selectedAddress.province || null,
@@ -199,7 +212,7 @@ export function CompanyStep({ initialCompanyId, initialBranchId, onSubmit, onBac
         .insert({
           company_id: companyData.id,
           branch_name: newBranchName.trim(),
-          street: selectedAddress.street || selectedAddress.formatted_address,
+          street: composeStreetAddress(selectedAddress, specificAddressNumber),
           suburb: selectedAddress.suburb || null,
           city: selectedAddress.city || null,
           province: selectedAddress.province || null,
@@ -238,7 +251,7 @@ export function CompanyStep({ initialCompanyId, initialBranchId, onSubmit, onBac
         .insert({
           company_id: selectedCompany.id,
           branch_name: newBranchName.trim(),
-          street: selectedAddress.street || selectedAddress.formatted_address,
+          street: composeStreetAddress(selectedAddress, specificAddressNumber),
           suburb: selectedAddress.suburb || null,
           city: selectedAddress.city || null,
           province: selectedAddress.province || null,
@@ -290,6 +303,7 @@ export function CompanyStep({ initialCompanyId, initialBranchId, onSubmit, onBac
     setNewCompanyName('');
     setNewBranchName('');
     setSelectedAddress(null);
+    setSpecificAddressNumber('');
     setAddressError(null);
   };
 
@@ -492,6 +506,19 @@ export function CompanyStep({ initialCompanyId, initialBranchId, onSubmit, onBac
                 required
                 error={addressError || undefined}
               />
+
+              <div className="space-y-2">
+                <Label className="text-foreground font-medium">Street / Unit Number</Label>
+                <Input
+                  placeholder="e.g. 15, Unit 4, Block B"
+                  value={specificAddressNumber}
+                  onChange={(e) => setSpecificAddressNumber(e.target.value)}
+                  className="h-12 bg-secondary border-border rounded-xl text-foreground"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Add a building, suite, or exact street number if the suggested address needs more detail.
+                </p>
+              </div>
 
               {/* Pending verification note */}
               <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-xl p-4">
@@ -725,6 +752,19 @@ export function CompanyStep({ initialCompanyId, initialBranchId, onSubmit, onBac
                 error={addressError || undefined}
               />
 
+              <div className="space-y-2">
+                <Label className="text-foreground font-medium">Street / Unit Number</Label>
+                <Input
+                  placeholder="e.g. 15, Unit 4, Block B"
+                  value={specificAddressNumber}
+                  onChange={(e) => setSpecificAddressNumber(e.target.value)}
+                  className="h-12 bg-secondary border-border rounded-xl text-foreground"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Add the exact unit, building, or street number if it is missing from the search result.
+                </p>
+              </div>
+
               {error && (
                 <p className="text-sm text-destructive">{error}</p>
               )}
@@ -740,6 +780,7 @@ export function CompanyStep({ initialCompanyId, initialBranchId, onSubmit, onBac
                     }
                     setNewBranchName('');
                     setSelectedAddress(null);
+                    setSpecificAddressNumber('');
                     setAddressError(null);
                   }}
                   className="flex-1 h-14 border-border text-foreground rounded-xl"

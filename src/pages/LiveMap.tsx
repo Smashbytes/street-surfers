@@ -145,7 +145,7 @@ export default function LiveMap() {
               </MapContainer>
 
               {/* Info overlay */}
-              <div className="absolute bottom-4 left-4 right-4 z-[1000]">
+              <div className="absolute bottom-20 left-4 right-4 z-[1000] sm:bottom-4">
                 <Card className="bg-card/95 backdrop-blur border-border shadow-lg">
                   <CardContent className="p-4">
                     <div className="flex items-center justify-between">

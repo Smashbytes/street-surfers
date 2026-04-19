@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
@@ -8,7 +8,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Loader2, AlertCircle, Shield, MapPin, Mail } from 'lucide-react';
+import { Loader2, AlertCircle, Shield, MapPin, Mail, CheckCircle2 } from 'lucide-react';
 import { z } from 'zod';
 import logo from '@/assets/logo.webp';
 
@@ -20,16 +20,18 @@ export default function Auth() {
   const navigate = useNavigate();
   const location = useLocation();
   const { signIn, signUp, user, passenger, loading } = useAuth();
-  
+
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [signupEmailSent, setSignupEmailSent] = useState(false);
+  const [signupError, setSignupError] = useState<string | null>(null);
   const [consentAccepted, setConsentAccepted] = useState(false);
-  
+  const signupEmailRef = useRef('');
+
   // Login fields
   const [loginEmail, setLoginEmail] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
-  
+
   // Signup fields
   const [signupEmail, setSignupEmail] = useState('');
   const [signupPassword, setSignupPassword] = useState('');
@@ -49,7 +51,7 @@ export default function Auth() {
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
-    
+
     try {
       emailSchema.parse(loginEmail);
       passwordSchema.parse(loginPassword);
@@ -61,9 +63,9 @@ export default function Auth() {
     }
 
     setIsLoading(true);
-    
+
     const { error: signInError } = await signIn(loginEmail, loginPassword);
-    
+
     if (signInError) {
       setError(signInError.message);
       setIsLoading(false);
@@ -73,7 +75,8 @@ export default function Auth() {
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
-    
+    setSignupError(null);
+
     try {
       emailSchema.parse(signupEmail);
       passwordSchema.parse(signupPassword);
@@ -86,28 +89,39 @@ export default function Auth() {
       return;
     }
 
-    setIsLoading(true);
-    
-    const { error: signUpError } = await signUp(signupEmail, signupPassword, signupFullName, {
+    // Capture the email in a ref so it survives any re-renders.
+    signupEmailRef.current = signupEmail;
+
+    // Show the "check your email" screen IMMEDIATELY. Don't wait for
+    // Supabase — their built-in SMTP can take 10-60s to respond, and
+    // the user must not stare at a spinner wondering if anything happened.
+    setSignupEmailSent(true);
+
+    // Fire-and-forget: the network call runs in the background.
+    // If it fails with a terminal error (duplicate email, rate limit),
+    // we show an inline warning ON the email screen — we never yank
+    // the user back to the form.
+    signUp(signupEmail, signupPassword, signupFullName, {
       phone: signupPhone,
       shift_type: signupShiftType,
+    }).then(({ error: err }) => {
+      if (!err) return;
+      const msg = err.message.toLowerCase();
+      const isTransient =
+        msg.includes('timeout') ||
+        msg.includes('cannot process') ||
+        msg.includes('network') ||
+        msg.includes('failed to fetch');
+      if (isTransient) return; // email probably sent anyway
+      // Show the backend error on the email screen, not by going back
+      setSignupError(err.message);
     });
-
-    if (signUpError) {
-      const msg = signUpError.message.toLowerCase();
-      if (msg.includes('timeout') || msg.includes('cannot process') || msg.includes('network')) {
-        setError('Something went wrong — please try again.');
-      } else {
-        setError(signUpError.message);
-      }
-      setIsLoading(false);
-    } else {
-      // Success — show the email confirmation screen.
-      setIsLoading(false);
-      setSignupEmailSent(true);
-    }
   };
 
+  // ── Email confirmation screen ──────────────────────────────
+  // This is a SEPARATE full-page render — nothing from the form
+  // can bleed through. The user sees this the instant they click
+  // "Create Account".
   if (signupEmailSent) {
     return (
       <div className="min-h-screen bg-background flex flex-col items-center justify-center px-6">
@@ -115,23 +129,45 @@ export default function Auth() {
           <img src={logo} alt="Street Surfers" className="h-20 w-auto mx-auto" />
         </div>
         <div className="w-full max-w-sm bg-card border border-border rounded-2xl p-8 text-center space-y-4">
-          <div className="flex items-center justify-center w-16 h-16 rounded-full bg-accent/20 mx-auto">
-            <Mail className="w-8 h-8 text-accent" />
+          <div className="flex items-center justify-center w-16 h-16 rounded-full bg-emerald-500/20 mx-auto">
+            <Mail className="w-8 h-8 text-emerald-500" />
           </div>
           <h2 className="text-xl font-bold text-foreground">Check your email</h2>
-          <p className="text-muted-foreground text-sm">
-            We've sent a confirmation link to <span className="text-foreground font-medium">{signupEmail}</span>.
-            Click the link to activate your account and get started.
+          <p className="text-muted-foreground text-sm leading-relaxed">
+            We've sent a confirmation link to{' '}
+            <span className="text-foreground font-semibold">{signupEmailRef.current || signupEmail}</span>.
           </p>
+          <div className="bg-secondary rounded-xl p-4 text-left space-y-2">
+            <div className="flex items-start gap-2">
+              <CheckCircle2 className="w-4 h-4 text-emerald-500 mt-0.5 shrink-0" />
+              <p className="text-sm text-foreground">Open the email from <span className="font-medium">Street Surfers</span></p>
+            </div>
+            <div className="flex items-start gap-2">
+              <CheckCircle2 className="w-4 h-4 text-emerald-500 mt-0.5 shrink-0" />
+              <p className="text-sm text-foreground">Tap <span className="font-medium">"Confirm your mail"</span></p>
+            </div>
+            <div className="flex items-start gap-2">
+              <CheckCircle2 className="w-4 h-4 text-emerald-500 mt-0.5 shrink-0" />
+              <p className="text-sm text-foreground">Complete your onboarding profile</p>
+            </div>
+          </div>
           <p className="text-xs text-muted-foreground">
-            Didn't receive it? Check your spam folder or{' '}
-            <button
-              className="text-accent underline underline-offset-2"
-              onClick={() => { setSignupEmailSent(false); setError(null); }}
-            >
-              try again
-            </button>.
+            Can't find it? Check your <span className="font-medium text-foreground">spam or junk folder</span>.
           </p>
+
+          {signupError && (
+            <Alert variant="destructive" className="rounded-xl border-accent/50 bg-accent/10 text-left">
+              <AlertCircle className="h-4 w-4" />
+              <AlertDescription className="text-foreground text-sm">{signupError}</AlertDescription>
+            </Alert>
+          )}
+
+          <button
+            className="text-accent underline underline-offset-2 text-sm"
+            onClick={() => { setSignupEmailSent(false); setError(null); setSignupError(null); }}
+          >
+            Back to sign up
+          </button>
         </div>
       </div>
     );
@@ -374,8 +410,14 @@ export default function Auth() {
                     className="w-full h-12 rounded-xl gradient-accent hover:opacity-90 text-accent-foreground font-semibold text-base mt-2 glow-accent"
                     disabled={isLoading || !consentAccepted}
                   >
-                    {isLoading ? <Loader2 className="h-5 w-5 animate-spin mr-2" /> : null}
-                    Create Account
+                    {isLoading ? (
+                      <>
+                        <Loader2 className="h-5 w-5 animate-spin mr-2" />
+                        Creating...
+                      </>
+                    ) : (
+                      'Create Account'
+                    )}
                   </Button>
                 </form>
               </TabsContent>

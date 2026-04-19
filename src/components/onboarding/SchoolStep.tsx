@@ -28,6 +28,18 @@ interface SchoolStepProps {
 
 type Step = 'search' | 'create-school';
 
+function composeStreetAddress(selection: AddressSelection, specificNumber: string) {
+  const baseStreet = selection.street || selection.formatted_address;
+  const trimmedNumber = specificNumber.trim();
+  if (!trimmedNumber) return baseStreet;
+
+  const normalizedBase = baseStreet.toLowerCase();
+  const normalizedNumber = trimmedNumber.toLowerCase();
+  if (normalizedBase.startsWith(normalizedNumber)) return baseStreet;
+
+  return `${trimmedNumber} ${baseStreet}`.trim();
+}
+
 export function SchoolStep({ initialSchoolId, onSubmit, onBack }: SchoolStepProps) {
   const [step, setStep] = useState<Step>('search');
   const [schools, setSchools] = useState<School[]>([]);
@@ -40,6 +52,7 @@ export function SchoolStep({ initialSchoolId, onSubmit, onBack }: SchoolStepProp
   // New school creation state
   const [newSchoolName, setNewSchoolName] = useState('');
   const [selectedAddress, setSelectedAddress] = useState<AddressSelection | null>(null);
+  const [specificAddressNumber, setSpecificAddressNumber] = useState('');
 
   useEffect(() => {
     async function fetchSchools() {
@@ -126,7 +139,7 @@ export function SchoolStep({ initialSchoolId, onSubmit, onBack }: SchoolStepProp
         .insert({
           company_name: newSchoolName.trim(),
           is_school: true,
-          street: selectedAddress.street || selectedAddress.formatted_address,
+          street: composeStreetAddress(selectedAddress, specificAddressNumber),
           suburb: selectedAddress.suburb || null,
           city: selectedAddress.city || null,
           province: selectedAddress.province || null,
@@ -154,6 +167,7 @@ export function SchoolStep({ initialSchoolId, onSubmit, onBack }: SchoolStepProp
     setSearchQuery('');
     setNewSchoolName('');
     setSelectedAddress(null);
+    setSpecificAddressNumber('');
     setAddressError(null);
   };
 
@@ -345,6 +359,19 @@ export function SchoolStep({ initialSchoolId, onSubmit, onBack }: SchoolStepProp
               required
               error={addressError || undefined}
             />
+
+            <div className="space-y-2">
+              <Label className="text-foreground font-medium">Street / Unit Number</Label>
+              <Input
+                placeholder="e.g. Gate 2, Block A, 15"
+                value={specificAddressNumber}
+                onChange={(e) => setSpecificAddressNumber(e.target.value)}
+                className="h-12 bg-secondary border-border rounded-xl text-foreground"
+              />
+              <p className="text-xs text-muted-foreground">
+                Add the exact entrance, block, or street number if the search result needs more precision.
+              </p>
+            </div>
 
             {/* Pending verification note */}
             <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-xl p-4">

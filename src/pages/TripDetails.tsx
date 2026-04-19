@@ -1,8 +1,7 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import {
   ArrowLeft,
-  MapPin,
   Clock,
   User,
   Car,
@@ -36,6 +35,13 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
+import { TripMapLeaflet } from '@/components/TripMapLeaflet';
+
+interface DriverLocation {
+  latitude: number;
+  longitude: number;
+  updated_at: string;
+}
 
 const statusColors: Record<string, string> = {
   scheduled: 'bg-secondary text-foreground border-border',
@@ -60,9 +66,54 @@ export default function TripDetails() {
   const { trip, loading, error, accessDenied, refetch } = useTripDetails(trip_id);
   const { toast } = useToast();
   const [isCancelling, setIsCancelling] = useState(false);
+  const [driverLocation, setDriverLocation] = useState<DriverLocation | null>(null);
 
   const isTripActive = trip?.status === 'in_progress';
   const canCancel = trip?.status === 'scheduled' || trip?.status === 'driver_assigned';
+
+  useEffect(() => {
+    if (!trip?.driver_id || !(trip.status === 'driver_assigned' || trip.status === 'in_progress')) {
+      setDriverLocation(null);
+      return;
+    }
+
+    const fetchLocation = async () => {
+      const { data } = await supabase
+        .from('driver_locations')
+        .select('latitude, longitude, updated_at')
+        .eq('driver_id', trip.driver_id)
+        .maybeSingle();
+
+      if (data?.latitude != null && data?.longitude != null) {
+        setDriverLocation(data);
+      }
+    };
+
+    fetchLocation();
+
+    const channel = supabase
+      .channel(`trip-driver-loc-${trip.driver_id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'driver_locations',
+          filter: `driver_id=eq.${trip.driver_id}`,
+        },
+        (payload) => {
+          const row = payload.new as DriverLocation | undefined;
+          if (row?.latitude != null && row?.longitude != null) {
+            setDriverLocation(row);
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [trip?.driver_id, trip?.status]);
 
   const handleCallDriver = () => {
     if (trip?.driver?.profile?.phone) {
@@ -285,25 +336,30 @@ export default function TripDetails() {
 
           {/* Map Preview */}
           <Card className="bg-card border-border overflow-hidden">
-            <div className="h-48 relative">
-              {(trip.origin_lat && trip.origin_lng) ? (
-                <img
-                  src={`https://staticmap.openstreetmap.de/staticmap.php?center=${trip.origin_lat},${trip.origin_lng}&zoom=13&size=600x300&maptype=osmarenderer&markers=${trip.origin_lat},${trip.origin_lng},green-pushpin${trip.destination_lat && trip.destination_lng ? `|${trip.destination_lat},${trip.destination_lng},red-pushpin` : ''}`}
-                  alt="Trip route map"
-                  className="w-full h-full object-cover"
-                  onError={(e) => {
-                    (e.target as HTMLImageElement).style.display = 'none';
-                    (e.target as HTMLImageElement).nextElementSibling?.classList.remove('hidden');
-                  }}
-                />
-              ) : null}
-              <div className={`${trip.origin_lat ? 'hidden' : ''} h-full bg-secondary flex items-center justify-center`}>
-                <div className="text-center">
-                  <MapPin className="h-8 w-8 text-muted-foreground mx-auto mb-2" />
-                  <p className="text-sm text-muted-foreground">Map preview</p>
-                  <p className="text-xs text-muted-foreground">Coordinates not available</p>
-                </div>
-              </div>
+            <div className="relative">
+              <TripMapLeaflet
+                pickup={
+                  trip.trip_passenger.pickup_lat != null && trip.trip_passenger.pickup_lng != null
+                    ? { lat: trip.trip_passenger.pickup_lat, lng: trip.trip_passenger.pickup_lng }
+                    : trip.origin_lat != null && trip.origin_lng != null
+                    ? { lat: trip.origin_lat, lng: trip.origin_lng }
+                    : undefined
+                }
+                dropoff={
+                  trip.trip_passenger.dropoff_lat != null && trip.trip_passenger.dropoff_lng != null
+                    ? { lat: trip.trip_passenger.dropoff_lat, lng: trip.trip_passenger.dropoff_lng }
+                    : trip.destination_lat != null && trip.destination_lng != null
+                    ? { lat: trip.destination_lat, lng: trip.destination_lng }
+                    : undefined
+                }
+                driver={
+                  driverLocation
+                    ? { lat: driverLocation.latitude, lng: driverLocation.longitude }
+                    : undefined
+                }
+                status={trip.status}
+                height={192}
+              />
               {isTripActive && (
                 <Badge className="absolute top-3 right-3 bg-accent text-accent-foreground animate-pulse">
                   Live Tracking Active

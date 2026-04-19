@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { z } from 'zod';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -21,7 +21,12 @@ const setPasswordSchema = z
 
 const SetPassword = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { toast } = useToast();
+
+  const [capturedHash] = useState<string>(
+    () => window.location.hash || (location.state as any)?.hash || ''
+  );
 
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -32,33 +37,67 @@ const SetPassword = () => {
   const [fieldErrors, setFieldErrors] = useState<{ password?: string; confirmPassword?: string }>({});
   const [success, setSuccess] = useState(false);
 
-  // On mount: Supabase JS SDK automatically exchanges the #access_token hash
-  // from the invite email URL into a valid session.
   useEffect(() => {
-    const checkSession = async () => {
+    let resolved = false;
+
+    const resolve = (hasSession: boolean, errMsg?: string) => {
+      if (resolved) return;
+      resolved = true;
+      setSessionReady(hasSession);
+      if (!hasSession) {
+        setError(errMsg ?? 'This link is invalid or has expired. Please contact your dispatcher for a new invite.');
+      }
+      setIsCheckingSession(false);
+    };
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      (_event, session) => {
+        if (session) resolve(true);
+      }
+    );
+
+    if (capturedHash && capturedHash.includes('access_token')) {
+      const params = new URLSearchParams(capturedHash.replace(/^#/, ''));
+      const accessToken = params.get('access_token');
+      const refreshToken = params.get('refresh_token');
+      if (accessToken && refreshToken) {
+        supabase.auth.setSession({ access_token: accessToken, refresh_token: refreshToken })
+          .then(({ data }) => {
+            if (data.session) resolve(true);
+          })
+          .catch(() => {
+            // Let the fallback timer decide if the link is actually unusable.
+          });
+      }
+    }
+
+    const fallbackTimer = setTimeout(async () => {
+      if (resolved) return;
+
       try {
-        // Give the SDK a moment to process the URL hash
         const { data: { session }, error: sessionError } = await supabase.auth.getSession();
 
         if (sessionError) {
-          setError('This link is invalid or has expired. Please contact your dispatcher for a new invite.');
-          setSessionReady(false);
-        } else if (!session) {
-          setError('This link has already been used or has expired. Please contact your dispatcher for a new invite.');
-          setSessionReady(false);
-        } else {
-          setSessionReady(true);
+          resolve(false, 'This link is invalid or has expired. Please contact your dispatcher for a new invite.');
+          return;
         }
-      } catch {
-        setError('Something went wrong. Please try again or contact your dispatcher.');
-        setSessionReady(false);
-      } finally {
-        setIsCheckingSession(false);
-      }
-    };
 
-    checkSession();
-  }, []);
+        resolve(
+          !!session,
+          session
+            ? undefined
+            : 'This link has already been used or has expired. Please contact your dispatcher for a new invite.'
+        );
+      } catch {
+        resolve(false, 'Something went wrong. Please try again or contact your dispatcher.');
+      }
+    }, 4000);
+
+    return () => {
+      subscription.unsubscribe();
+      clearTimeout(fallbackTimer);
+    };
+  }, [capturedHash]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

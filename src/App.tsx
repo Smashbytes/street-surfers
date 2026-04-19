@@ -31,17 +31,22 @@ const PageLoader = () => (
   </div>
 );
 
-// Redirect magic links to /auth/callback if access_token in hash
+// Redirect magic links to /auth/callback if access_token is in the hash.
+// Avoid navigating when already on /auth/callback so we do not strip the
+// hash before the callback page can read it.
 const TokenRedirector = () => {
   const navigate = useNavigate();
   const location = useLocation();
 
   useEffect(() => {
-    // Check if hash contains access_token (Supabase magic link)
-    if (location.hash && location.hash.includes('access_token')) {
-      navigate('/auth/callback', { replace: true });
+    if (
+      location.pathname !== '/auth/callback' &&
+      location.hash &&
+      location.hash.includes('access_token')
+    ) {
+      navigate('/auth/callback', { replace: true, state: { hash: location.hash } });
     }
-  }, [location.hash, navigate]);
+  }, [location.hash, location.pathname, navigate]);
 
   return null;
 };
