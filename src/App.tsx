@@ -6,8 +6,15 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, useNavigate, useLocation } from "react-router-dom";
-import { AuthProvider } from "@/hooks/useAuth";
+import { AuthProvider, useAuth } from "@/hooks/useAuth";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
+import { usePushNotification } from "@/hooks/usePushNotification";
+
+function PushSetup() {
+  const { user } = useAuth();
+  usePushNotification(user?.id);
+  return null;
+}
 
 // Eagerly loaded — needed before auth resolves
 import Auth from "./pages/Auth";
@@ -58,6 +65,7 @@ const App = () => (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
         <AuthProvider>
+          <PushSetup />
           <Toaster />
           <Sonner />
           <PWAInstallPrompt />
