@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { MapPin, Clock, ArrowRight, User, Car } from 'lucide-react';
+import { MapPin, Clock, ArrowRight, User, Car, Home, Building2 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -82,17 +82,31 @@ export function TripCard({ trip, showDriver = true, showActions = true, compact 
               <div className="h-3 w-3 rounded-full bg-success ring-4 ring-success/20" />
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-xs text-muted-foreground uppercase tracking-wide">Pickup</p>
+              <div className="flex items-center gap-1 mb-0.5">
+                {trip.trip_type === 'inbound'
+                  ? <Home className="h-3 w-3 text-muted-foreground" />
+                  : <Building2 className="h-3 w-3 text-muted-foreground" />}
+                <p className="text-xs text-muted-foreground uppercase tracking-wide">
+                  {trip.trip_type === 'inbound' ? 'Home Pickup' : 'Work / School Pickup'}
+                </p>
+              </div>
               <p className="text-sm font-medium text-foreground truncate">{pickupAddress}</p>
             </div>
           </div>
-          
+
           <div className="flex items-start gap-3">
             <div className="mt-1.5">
               <div className="h-3 w-3 rounded-full bg-accent ring-4 ring-accent/20" />
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-xs text-muted-foreground uppercase tracking-wide">Drop-off</p>
+              <div className="flex items-center gap-1 mb-0.5">
+                {trip.trip_type === 'inbound'
+                  ? <Building2 className="h-3 w-3 text-muted-foreground" />
+                  : <Home className="h-3 w-3 text-muted-foreground" />}
+                <p className="text-xs text-muted-foreground uppercase tracking-wide">
+                  {trip.trip_type === 'inbound' ? 'Work / School Drop-off' : 'Home Drop-off'}
+                </p>
+              </div>
               <p className="text-sm font-medium text-foreground truncate">{dropoffAddress}</p>
             </div>
           </div>

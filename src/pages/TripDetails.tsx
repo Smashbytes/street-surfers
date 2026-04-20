@@ -10,7 +10,9 @@ import {
   Navigation,
   Users,
   AlertCircle,
-  Loader2
+  Loader2,
+  Home,
+  Building2
 } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 import { AppLayout } from '@/components/AppLayout';
@@ -315,19 +317,33 @@ export default function TripDetails() {
                   <div className="h-4 w-4 rounded-full bg-success ring-4 ring-success/20" />
                 </div>
                 <div className="flex-1">
-                  <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Pickup</p>
+                  <div className="flex items-center gap-1.5 mb-1">
+                    {trip.trip_type === 'inbound'
+                      ? <Home className="h-3.5 w-3.5 text-muted-foreground" />
+                      : <Building2 className="h-3.5 w-3.5 text-muted-foreground" />}
+                    <p className="text-xs text-muted-foreground uppercase tracking-wide">
+                      {trip.trip_type === 'inbound' ? 'Home Pickup' : 'Work / School Pickup'}
+                    </p>
+                  </div>
                   <p className="text-foreground font-medium">{pickupAddress}</p>
                 </div>
               </div>
-              
+
               <div className="ml-2 border-l-2 border-dashed border-border h-6" />
-              
+
               <div className="flex items-start gap-4">
                 <div className="mt-1">
                   <div className="h-4 w-4 rounded-full bg-accent ring-4 ring-accent/20" />
                 </div>
                 <div className="flex-1">
-                  <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Drop-off</p>
+                  <div className="flex items-center gap-1.5 mb-1">
+                    {trip.trip_type === 'inbound'
+                      ? <Building2 className="h-3.5 w-3.5 text-muted-foreground" />
+                      : <Home className="h-3.5 w-3.5 text-muted-foreground" />}
+                    <p className="text-xs text-muted-foreground uppercase tracking-wide">
+                      {trip.trip_type === 'inbound' ? 'Work / School Drop-off' : 'Home Drop-off'}
+                    </p>
+                  </div>
                   <p className="text-foreground font-medium">{dropoffAddress}</p>
                 </div>
               </div>
