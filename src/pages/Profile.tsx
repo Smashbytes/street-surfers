@@ -5,11 +5,12 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { User, Mail, Phone, MapPin, LogOut, Shield, Briefcase, Lock, GraduationCap, AlertCircle, Check, Loader2, Eye, EyeOff } from 'lucide-react';
+import { User, Mail, Phone, MapPin, LogOut, Shield, Briefcase, Lock, GraduationCap, AlertCircle, Check, Loader2, Eye, EyeOff, Users } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import logo from '@/assets/logo.webp';
+import AccountSwitcher from '@/components/AccountSwitcher';
 
 export default function Profile() {
   const { profile, passenger, signOut, user } = useAuth();
@@ -31,6 +32,8 @@ export default function Profile() {
   const [isSavingPhone, setIsSavingPhone] = useState(false);
   const [isSavingEmail, setIsSavingEmail] = useState(false);
   const [isSavingPassword, setIsSavingPassword] = useState(false);
+
+  const [switcherOpen, setSwitcherOpen] = useState(false);
 
   const handleSignOut = async () => {
     await signOut();
@@ -428,10 +431,20 @@ export default function Profile() {
             </div>
           </div>
 
+          {/* Switch Account */}
+          <Button
+            variant="outline"
+            className="w-full h-12 rounded-xl border-accent/50 text-foreground hover:bg-accent/10 hover:text-foreground"
+            onClick={() => setSwitcherOpen(true)}
+          >
+            <Users className="h-4 w-4 mr-2 text-accent" />
+            Switch Account
+          </Button>
+
           {/* Sign Out */}
-          <Button 
-            variant="outline" 
-            className="w-full h-12 rounded-xl border-border text-foreground hover:bg-secondary hover:text-foreground" 
+          <Button
+            variant="outline"
+            className="w-full h-12 rounded-xl border-border text-foreground hover:bg-secondary hover:text-foreground"
             onClick={handleSignOut}
           >
             <LogOut className="h-4 w-4 mr-2" />
@@ -439,6 +452,7 @@ export default function Profile() {
           </Button>
         </div>
       </div>
+      <AccountSwitcher open={switcherOpen} onOpenChange={setSwitcherOpen} />
     </AppLayout>
   );
 }

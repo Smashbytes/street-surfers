@@ -368,6 +368,8 @@ export default function TripDetails() {
                     ? { lat: trip.destination_lat, lng: trip.destination_lng }
                     : undefined
                 }
+                pickupAddress={pickupAddress}
+                dropoffAddress={dropoffAddress}
                 driver={
                   driverLocation
                     ? { lat: driverLocation.latitude, lng: driverLocation.longitude }

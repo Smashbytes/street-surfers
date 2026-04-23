@@ -12,9 +12,30 @@ interface TripMapLeafletProps {
   pickup?: Coords;
   dropoff?: Coords;
   driver?: Coords;
+  /** Address strings used as a last-resort geocoding fallback when coords are missing */
+  pickupAddress?: string;
+  dropoffAddress?: string;
   status: string;
   className?: string;
   height?: number | string;
+}
+
+async function geocodeAddress(address: string): Promise<Coords | null> {
+  if (!address || address.trim() === '' || address.trim().toUpperCase() === 'TBD') return null;
+  try {
+    const query = address.toLowerCase().includes('south africa') ? address : `${address}, South Africa`;
+    const url = `https://photon.komoot.io/api/?q=${encodeURIComponent(query)}&limit=1`;
+    const resp = await fetch(url);
+    if (!resp.ok) return null;
+    const data = await resp.json();
+    const feat = data?.features?.[0];
+    if (!feat?.geometry?.coordinates) return null;
+    const [lng, lat] = feat.geometry.coordinates as [number, number];
+    if (typeof lat !== 'number' || typeof lng !== 'number') return null;
+    return { lat, lng };
+  } catch {
+    return null;
+  }
 }
 
 function makeIcon(color: string, pulse = false): L.DivIcon {
@@ -70,22 +91,50 @@ export function TripMapLeaflet({
   pickup,
   dropoff,
   driver,
+  pickupAddress,
+  dropoffAddress,
   status,
   className,
   height = 220,
 }: TripMapLeafletProps) {
   const [routeCoords, setRouteCoords] = useState<[number, number][] | null>(null);
+  const [geocodedPickup, setGeocodedPickup] = useState<Coords | null>(null);
+  const [geocodedDropoff, setGeocodedDropoff] = useState<Coords | null>(null);
 
   useEffect(() => {
     ensurePulseCss();
   }, []);
 
+  // Geocode address fallback when coords missing — one-shot per address change
+  useEffect(() => {
+    let cancelled = false;
+    if (!pickup && pickupAddress) {
+      geocodeAddress(pickupAddress).then((c) => { if (!cancelled) setGeocodedPickup(c); });
+    } else {
+      setGeocodedPickup(null);
+    }
+    return () => { cancelled = true; };
+  }, [pickup?.lat, pickup?.lng, pickupAddress]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!dropoff && dropoffAddress) {
+      geocodeAddress(dropoffAddress).then((c) => { if (!cancelled) setGeocodedDropoff(c); });
+    } else {
+      setGeocodedDropoff(null);
+    }
+    return () => { cancelled = true; };
+  }, [dropoff?.lat, dropoff?.lng, dropoffAddress]);
+
+  const effectivePickup = pickup ?? geocodedPickup ?? undefined;
+  const effectiveDropoff = dropoff ?? geocodedDropoff ?? undefined;
+
   const routeWaypoints = useMemo(() => {
     const points: Coords[] = [];
-    if (pickup) points.push(pickup);
-    if (dropoff) points.push(dropoff);
+    if (effectivePickup) points.push(effectivePickup);
+    if (effectiveDropoff) points.push(effectiveDropoff);
     return points;
-  }, [pickup, dropoff]);
+  }, [effectivePickup, effectiveDropoff]);
 
   useEffect(() => {
     let cancelled = false;
@@ -115,12 +164,12 @@ export function TripMapLeaflet({
 
   const center = useMemo<LatLngExpression>(() => {
     if (driver) return [driver.lat, driver.lng];
-    if (pickup) return [pickup.lat, pickup.lng];
-    if (dropoff) return [dropoff.lat, dropoff.lng];
+    if (effectivePickup) return [effectivePickup.lat, effectivePickup.lng];
+    if (effectiveDropoff) return [effectiveDropoff.lat, effectiveDropoff.lng];
     return [-26.2041, 28.0473];
-  }, [driver, pickup, dropoff]);
+  }, [driver, effectivePickup, effectiveDropoff]);
 
-  if (!pickup || !dropoff) {
+  if (!effectivePickup || !effectiveDropoff) {
     return (
       <div
         className={`relative w-full overflow-hidden rounded-xl border border-border bg-card ${className ?? ''}`}
@@ -192,8 +241,8 @@ export function TripMapLeaflet({
           />
         )}
 
-        <Marker position={[pickup.lat, pickup.lng]} icon={pickupIcon} />
-        <Marker position={[dropoff.lat, dropoff.lng]} icon={dropoffIcon} />
+        <Marker position={[effectivePickup.lat, effectivePickup.lng]} icon={pickupIcon} />
+        <Marker position={[effectiveDropoff.lat, effectiveDropoff.lng]} icon={dropoffIcon} />
         {driver && <Marker position={[driver.lat, driver.lng]} icon={driverIcon} />}
 
         <FitToBounds points={boundsPoints} />

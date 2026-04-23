@@ -1,6 +1,12 @@
-import { useState, useEffect, createContext, useContext, ReactNode } from 'react';
+import { useState, useEffect, useCallback, createContext, useContext, ReactNode } from 'react';
 import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
+import {
+  SavedAccount,
+  saveAccount,
+  removeSavedAccount,
+  consumeAdditiveSignIn,
+} from '@/lib/savedAccounts';
 
 interface Passenger {
   id: string;
@@ -77,6 +83,8 @@ interface AuthContextType {
   }) => Promise<{ error: Error | null }>;
   signOut: () => Promise<void>;
   isPassenger: boolean;
+  switchToAccount: (account: SavedAccount) => Promise<{ error: Error | null }>;
+  rememberCurrentAccount: () => SavedAccount | null;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -249,12 +257,67 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const signOut = async () => {
+    // If the user is signing out the active account, also forget it from
+    // the saved-account list — otherwise the switcher would offer them
+    // back into a session whose refresh token has just been invalidated.
+    if (user?.id) removeSavedAccount(user.id);
     await supabase.auth.signOut();
     setUser(null);
     setSession(null);
     setProfile(null);
     setPassenger(null);
   };
+
+  // Snapshot the currently active session into the saved-accounts store.
+  // Used by the account switcher before swapping to another account, and
+  // by /auth when an "additive" sign-in is in progress.
+  const rememberCurrentAccount = useCallback((): SavedAccount | null => {
+    if (!session?.refresh_token || !session?.access_token || !user) return null;
+    const snapshot: SavedAccount = {
+      userId: user.id,
+      email: user.email ?? '',
+      fullName: profile?.full_name ?? null,
+      avatarUrl: profile?.avatar_url ?? null,
+      passengerType: passenger?.passenger_type ?? null,
+      refreshToken: session.refresh_token,
+      accessToken: session.access_token,
+      savedAt: new Date().toISOString(),
+    };
+    saveAccount(snapshot);
+    return snapshot;
+  }, [session, user, profile, passenger]);
+
+  // Swap the active Supabase session to a saved account's tokens.
+  // Saves the current session first so it remains in the switcher list.
+  const switchToAccount = useCallback(
+    async (account: SavedAccount): Promise<{ error: Error | null }> => {
+      if (account.userId === user?.id) return { error: null }; // no-op
+      rememberCurrentAccount();
+      const { error } = await supabase.auth.setSession({
+        access_token: account.accessToken,
+        refresh_token: account.refreshToken,
+      });
+      if (error) {
+        // Refresh token expired or revoked — drop the dead entry so the
+        // switcher prompts the user to sign in again instead of looping.
+        removeSavedAccount(account.userId);
+        return { error };
+      }
+      return { error: null };
+    },
+    [user, rememberCurrentAccount]
+  );
+
+  // When /auth completes an "additive" sign-in (user tapped "Add another
+  // account"), restore the previous account into the saved store so it
+  // appears in the switcher next to the freshly added one.
+  useEffect(() => {
+    if (!user) return;
+    const prev = consumeAdditiveSignIn();
+    if (prev && prev.userId !== user.id) {
+      saveAccount(prev);
+    }
+  }, [user]);
 
   const value = {
     user,
@@ -266,6 +329,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     signUp,
     signOut,
     isPassenger: !!passenger,
+    switchToAccount,
+    rememberCurrentAccount,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

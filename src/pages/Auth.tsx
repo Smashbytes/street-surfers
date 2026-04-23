@@ -1,6 +1,7 @@
-import { useState, useRef } from 'react';
-import { useNavigate, useLocation, Link } from 'react-router-dom';
+import { useState, useRef, useEffect } from 'react';
+import { useNavigate, useLocation, useSearchParams, Link } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
+import { isAdditiveSignInPending } from '@/lib/savedAccounts';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -19,7 +20,14 @@ const phoneSchema = z.string().regex(/^[\d\s\-+()]*$/, 'Please enter a valid pho
 export default function Auth() {
   const navigate = useNavigate();
   const location = useLocation();
+  const [searchParams] = useSearchParams();
   const { signIn, signUp, user, passenger, loading } = useAuth();
+
+  // "Additive" mode = user came from the account switcher tapping
+  // "Add another account". Their previous session is parked in localStorage
+  // and AuthProvider will restore it once this sign-in completes.
+  const isAdditive = searchParams.get('additive') === '1' || isAdditiveSignInPending();
+  const prefillEmail = searchParams.get('email') || '';
 
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -29,8 +37,12 @@ export default function Auth() {
   const signupEmailRef = useRef('');
 
   // Login fields
-  const [loginEmail, setLoginEmail] = useState('');
+  const [loginEmail, setLoginEmail] = useState(prefillEmail);
   const [loginPassword, setLoginPassword] = useState('');
+
+  useEffect(() => {
+    if (prefillEmail) setLoginEmail(prefillEmail);
+  }, [prefillEmail]);
 
   // Signup fields
   const [signupEmail, setSignupEmail] = useState('');
@@ -206,6 +218,15 @@ export default function Auth() {
 
       {/* Auth Card */}
       <div className="flex-1 px-5 pb-8">
+        {isAdditive && (
+          <Alert className="mb-4 rounded-xl border-accent/60 bg-accent/15">
+            <Mail className="h-4 w-4 text-accent" />
+            <AlertDescription className="text-foreground text-sm leading-snug">
+              <span className="font-semibold">Adding another account.</span>{' '}
+              Your other account stays signed in — you can switch back any time from your Profile.
+            </AlertDescription>
+          </Alert>
+        )}
         {noPassengerRecord && (
           <Alert variant="destructive" className="mb-4 rounded-xl border-accent/50 bg-accent/10">
             <AlertCircle className="h-4 w-4" />
@@ -280,6 +301,15 @@ export default function Auth() {
 
               {/* Signup Form */}
               <TabsContent value="signup" className="p-5 pt-4">
+                {/* Prominent pre-submit notice so users know to expect a verification email */}
+                <Alert className="mb-4 rounded-xl border-accent/60 bg-accent/15">
+                  <Mail className="h-4 w-4 text-accent" />
+                  <AlertDescription className="text-foreground text-sm leading-snug">
+                    <span className="font-semibold">You'll need to verify your email.</span>{' '}
+                    After you tap Create Account, we send a confirmation link to the email you enter below.{' '}
+                    <span className="font-semibold">Open that email and click the link</span> — otherwise your account will not be activated.
+                  </AlertDescription>
+                </Alert>
                 <form onSubmit={handleSignup} className="space-y-4">
                   {/* Personal Info Section */}
                   <div className="space-y-4">
@@ -413,10 +443,13 @@ export default function Auth() {
                     {isLoading ? (
                       <>
                         <Loader2 className="h-5 w-5 animate-spin mr-2" />
-                        Creating...
+                        Sending verification email...
                       </>
                     ) : (
-                      'Create Account'
+                      <>
+                        <Mail className="h-5 w-5 mr-2" />
+                        Create Account & Send Verification Email
+                      </>
                     )}
                   </Button>
                 </form>
