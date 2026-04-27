@@ -1,12 +1,28 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Building2, MapPin, ArrowRight, ArrowLeft, Loader2, Check, Plus, Search, X, ChevronRight } from 'lucide-react';
+import { AlertTriangle, Building2, MapPin, ArrowRight, ArrowLeft, Loader2, Check, Plus, Search, X, ChevronRight } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { AddressAutocomplete, AddressSelection } from '@/components/AddressAutocomplete';
 import logo from '@/assets/logo.webp';
+
+// 150m — close enough that "same building" is the only realistic interpretation.
+const SAME_AS_HOME_METERS = 150;
+
+function haversineMeters(lat1: number, lng1: number, lat2: number, lng2: number) {
+  const R = 6371000;
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLng = ((lng2 - lng1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos((lat1 * Math.PI) / 180) *
+      Math.cos((lat2 * Math.PI) / 180) *
+      Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
 
 interface Company {
   id: string;
@@ -36,6 +52,8 @@ interface Branch {
 interface CompanyStepProps {
   initialCompanyId?: string | null;
   initialBranchId?: string | null;
+  homeLat?: number | null;
+  homeLng?: number | null;
   onSubmit: (company: Company, branch: Branch | null) => Promise<void>;
   onBack?: () => void;
 }
@@ -54,7 +72,7 @@ function composeStreetAddress(selection: AddressSelection, specificNumber: strin
   return `${trimmedNumber} ${baseStreet}`.trim();
 }
 
-export function CompanyStep({ initialCompanyId, initialBranchId, onSubmit, onBack }: CompanyStepProps) {
+export function CompanyStep({ initialCompanyId, initialBranchId, homeLat, homeLng, onSubmit, onBack }: CompanyStepProps) {
   const [step, setStep] = useState<Step>('search');
   const [companies, setCompanies] = useState<Company[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
@@ -71,6 +89,25 @@ export function CompanyStep({ initialCompanyId, initialBranchId, onSubmit, onBac
   const [newBranchName, setNewBranchName] = useState('');
   const [selectedAddress, setSelectedAddress] = useState<AddressSelection | null>(null);
   const [specificAddressNumber, setSpecificAddressNumber] = useState('');
+  // Acknowledgement that the chosen branch address really is the same place
+  // as home (e.g. genuine work-from-home). Without this, we block submission
+  // when the branch address falls within ~150m of the user's home address.
+  const [worksFromHomeConfirmed, setWorksFromHomeConfirmed] = useState(false);
+
+  const matchesHomeAddress = useMemo(() => {
+    if (!selectedAddress) return false;
+    if (homeLat == null || homeLng == null) return false;
+    if (homeLat === 0 && homeLng === 0) return false; // manual home entry without coords
+    if (selectedAddress.latitude == null || selectedAddress.longitude == null) return false;
+    const meters = haversineMeters(homeLat, homeLng, selectedAddress.latitude, selectedAddress.longitude);
+    return meters < SAME_AS_HOME_METERS;
+  }, [selectedAddress, homeLat, homeLng]);
+
+  // Reset the confirmation each time the address changes so the user can't
+  // tick the box, change to a different address, and slip past the warning.
+  useEffect(() => {
+    setWorksFromHomeConfirmed(false);
+  }, [selectedAddress?.latitude, selectedAddress?.longitude]);
 
   useEffect(() => {
     async function fetchCompanies() {
@@ -459,7 +496,7 @@ export function CompanyStep({ initialCompanyId, initialBranchId, onSubmit, onBac
 
   // Create company step
   if (step === 'create-company') {
-    const canProceed = newCompanyName.trim() && newBranchName.trim() && selectedAddress;
+    const canProceed = newCompanyName.trim() && newBranchName.trim() && selectedAddress && (!matchesHomeAddress || worksFromHomeConfirmed);
 
     return (
       <div className="min-h-screen bg-background flex flex-col">
@@ -526,6 +563,32 @@ export function CompanyStep({ initialCompanyId, initialBranchId, onSubmit, onBac
                   <strong>Note:</strong> New companies are marked as "pending verification" and will be reviewed by an administrator.
                 </p>
               </div>
+
+              {matchesHomeAddress && (
+                <div className="bg-destructive/10 border border-destructive/40 rounded-xl p-4 space-y-3">
+                  <div className="flex items-start gap-3">
+                    <AlertTriangle className="w-5 h-5 text-destructive mt-0.5 shrink-0" />
+                    <div className="space-y-1">
+                      <p className="text-sm font-semibold text-destructive">
+                        This is the same address as your home
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        Your branch address looks identical to where we'll pick you up. Most workplaces are different from home — please double-check you've selected the right address before continuing.
+                      </p>
+                    </div>
+                  </div>
+                  <label className="flex items-start gap-3 cursor-pointer">
+                    <Checkbox
+                      checked={worksFromHomeConfirmed}
+                      onCheckedChange={(v) => setWorksFromHomeConfirmed(!!v)}
+                      className="mt-0.5"
+                    />
+                    <span className="text-xs text-foreground">
+                      Yes, I work from home — this branch address is correct.
+                    </span>
+                  </label>
+                </div>
+              )}
 
               {error && (
                 <p className="text-sm text-destructive">{error}</p>
@@ -714,7 +777,7 @@ export function CompanyStep({ initialCompanyId, initialBranchId, onSubmit, onBac
 
   // Create branch step (for existing company)
   if (step === 'create-branch') {
-    const canProceed = newBranchName.trim() && selectedAddress;
+    const canProceed = newBranchName.trim() && selectedAddress && (!matchesHomeAddress || worksFromHomeConfirmed);
 
     return (
       <div className="min-h-screen bg-background flex flex-col">
@@ -764,6 +827,32 @@ export function CompanyStep({ initialCompanyId, initialBranchId, onSubmit, onBac
                   Add the exact unit, building, or street number if it is missing from the search result.
                 </p>
               </div>
+
+              {matchesHomeAddress && (
+                <div className="bg-destructive/10 border border-destructive/40 rounded-xl p-4 space-y-3">
+                  <div className="flex items-start gap-3">
+                    <AlertTriangle className="w-5 h-5 text-destructive mt-0.5 shrink-0" />
+                    <div className="space-y-1">
+                      <p className="text-sm font-semibold text-destructive">
+                        This is the same address as your home
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        Your branch address looks identical to where we'll pick you up. Most workplaces are different from home — please double-check you've selected the right address before continuing.
+                      </p>
+                    </div>
+                  </div>
+                  <label className="flex items-start gap-3 cursor-pointer">
+                    <Checkbox
+                      checked={worksFromHomeConfirmed}
+                      onCheckedChange={(v) => setWorksFromHomeConfirmed(!!v)}
+                      className="mt-0.5"
+                    />
+                    <span className="text-xs text-foreground">
+                      Yes, I work from home — this branch address is correct.
+                    </span>
+                  </label>
+                </div>
+              )}
 
               {error && (
                 <p className="text-sm text-destructive">{error}</p>

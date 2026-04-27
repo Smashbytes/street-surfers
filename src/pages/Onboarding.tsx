@@ -449,6 +449,8 @@ export default function Onboarding() {
         <CompanyStep
           initialCompanyId={passenger?.company_id}
           initialBranchId={passenger?.branch_id}
+          homeLat={passenger?.home_lat ?? null}
+          homeLng={passenger?.home_lng ?? null}
           onSubmit={handleCompanySubmit}
           onBack={() => setCurrentStep('home-address')}
         />
