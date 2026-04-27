@@ -1,6 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from './useAuth';
+import { fetchTripSnapshots, mapSnapshotToPassengerTrip } from '@/lib/tripSnapshots';
 
 export interface Trip {
   id: string;
@@ -34,6 +35,7 @@ export interface TripPassenger {
   seat_number: number | null;
   pickup_order: number | null;
   status: 'confirmed' | 'picked_up' | 'dropped_off' | 'no_show' | 'cancelled';
+  eta_minutes?: number | null;
   pickup_time: string | null;
   dropoff_time: string | null;
 }
@@ -59,6 +61,14 @@ export interface Driver {
 export interface TripWithDetails extends Trip {
   trip_passenger: TripPassenger;
   driver?: Driver;
+  driver_location?: {
+    latitude: number;
+    longitude: number;
+    updated_at: string;
+  } | null;
+  location_freshness?: string | null;
+  eta_minutes?: number | null;
+  geofence_state?: Record<string, unknown> | null;
 }
 
 export function useTrips() {
@@ -67,7 +77,7 @@ export function useTrips() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchTrips = async () => {
+  const fetchTrips = useCallback(async () => {
     if (!passenger) {
       setTrips([]);
       setLoading(false);
@@ -76,82 +86,12 @@ export function useTrips() {
 
     try {
       setLoading(true);
-      
-      // Fetch trip assignments for this passenger
-      const { data: tripPassengers, error: tpError } = await supabase
-        .from('trip_passengers')
-        .select('*')
-        .eq('passenger_id', passenger.id);
+      const snapshotRows = await fetchTripSnapshots();
+      const mappedTrips = snapshotRows
+        .map((row) => mapSnapshotToPassengerTrip(row.snapshot))
+        .filter(Boolean) as TripWithDetails[];
 
-      if (tpError) throw tpError;
-
-      if (!tripPassengers || tripPassengers.length === 0) {
-        setTrips([]);
-        setLoading(false);
-        return;
-      }
-
-      // Fetch the actual trips
-      const tripIds = tripPassengers.map(tp => tp.trip_id);
-      const { data: tripsData, error: tripsError } = await supabase
-        .from('trips')
-        .select('*')
-        .in('id', tripIds)
-        .order('scheduled_date', { ascending: true });
-
-      if (tripsError) throw tripsError;
-
-      // Fetch drivers for trips that have drivers
-      const driverIds = tripsData
-        ?.filter(t => t.driver_id)
-        .map(t => t.driver_id) || [];
-
-      let driversMap: Record<string, Driver> = {};
-
-      if (driverIds.length > 0) {
-        // Use the drivers_with_profile view — it includes full_name/avatar from profiles
-        // and has GRANT SELECT TO authenticated, bypassing the profiles RLS that blocks
-        // passengers from reading other users' profiles.
-        const { data: driversData } = await supabase
-          .from('drivers_with_profile' as any)
-          .select('id, user_id, license_number, vehicle_make, vehicle_model, vehicle_color, license_plate, vehicle_photo_url, is_active, is_online, full_name, avatar_url, phone')
-          .in('id', driverIds);
-
-        if (driversData) {
-          (driversData as any[]).forEach((driver: any) => {
-            driversMap[driver.id] = {
-              id: driver.id,
-              user_id: driver.user_id,
-              license_number: driver.license_number,
-              vehicle_make: driver.vehicle_make,
-              vehicle_model: driver.vehicle_model,
-              vehicle_color: driver.vehicle_color,
-              license_plate: driver.license_plate,
-              vehicle_photo_url: driver.vehicle_photo_url,
-              is_active: driver.is_active,
-              is_online: driver.is_online,
-              profile: {
-                full_name: driver.full_name,
-                avatar_url: driver.avatar_url,
-                phone: driver.phone,
-              },
-            };
-          });
-        }
-      }
-
-      // Combine data — skip any trip that somehow has no matching trip_passenger
-      const combinedTrips: TripWithDetails[] = (tripsData ?? []).flatMap(trip => {
-        const tripPassenger = tripPassengers.find(tp => tp.trip_id === trip.id);
-        if (!tripPassenger) return [];
-        return [{
-          ...trip,
-          trip_passenger: tripPassenger,
-          driver: trip.driver_id ? driversMap[trip.driver_id] : undefined,
-        }];
-      });
-
-      setTrips(combinedTrips);
+      setTrips(mappedTrips);
       setError(null);
     } catch (err) {
       console.error('Error fetching trips:', err);
@@ -159,18 +99,26 @@ export function useTrips() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [passenger]);
 
   useEffect(() => {
     fetchTrips();
-  }, [passenger]);
+  }, [fetchTrips]);
 
-  // Subscribe to realtime updates — filtered to this passenger only
   useEffect(() => {
     if (!passenger) return;
 
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+    const debouncedRefetch = () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        fetchTrips();
+      }, 250);
+    };
+
     const channel = supabase
-      .channel(`trips-updates-${passenger.id}`)
+      .channel(`passenger-trip-snapshots-${passenger.id}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'trips' }, debouncedRefetch)
       .on(
         'postgres_changes',
         {
@@ -179,30 +127,33 @@ export function useTrips() {
           table: 'trip_passengers',
           filter: `passenger_id=eq.${passenger.id}`,
         },
-        () => {
-          fetchTrips();
-        }
+        debouncedRefetch,
       )
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'driver_locations' }, debouncedRefetch)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'trip_geofence_events' }, debouncedRefetch)
       .subscribe();
 
     return () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
       supabase.removeChannel(channel);
     };
-  }, [passenger?.id]);
+  }, [fetchTrips, passenger]);
 
   const getTodaysTrips = () => {
     const today = new Date().toISOString().split('T')[0];
-    return trips.filter(t => t.scheduled_date === today);
+    return trips.filter((trip) => trip.scheduled_date === today);
   };
 
   const getUpcomingTrips = () => {
     const today = new Date().toISOString().split('T')[0];
-    return trips.filter(t => t.scheduled_date >= today && t.status !== 'completed' && t.status !== 'cancelled');
+    return trips.filter(
+      (trip) => trip.scheduled_date >= today && trip.status !== 'completed' && trip.status !== 'cancelled',
+    );
   };
 
   const getPastTrips = () => {
     const today = new Date().toISOString().split('T')[0];
-    return trips.filter(t => t.scheduled_date < today || t.status === 'completed');
+    return trips.filter((trip) => trip.scheduled_date < today || trip.status === 'completed');
   };
 
   const getNextTrip = () => {

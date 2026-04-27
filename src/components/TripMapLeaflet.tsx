@@ -4,7 +4,7 @@ import * as RL from 'react-leaflet';
 import L from 'leaflet';
 import type { LatLngExpression } from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import { fetchRoute } from '@/lib/routing';
+import { fetchRoute, geocodeAddress } from '@/lib/routing';
 
 type Coords = { lat: number; lng: number };
 
@@ -18,24 +18,6 @@ interface TripMapLeafletProps {
   status: string;
   className?: string;
   height?: number | string;
-}
-
-async function geocodeAddress(address: string): Promise<Coords | null> {
-  if (!address || address.trim() === '' || address.trim().toUpperCase() === 'TBD') return null;
-  try {
-    const query = address.toLowerCase().includes('south africa') ? address : `${address}, South Africa`;
-    const url = `https://photon.komoot.io/api/?q=${encodeURIComponent(query)}&limit=1`;
-    const resp = await fetch(url);
-    if (!resp.ok) return null;
-    const data = await resp.json();
-    const feat = data?.features?.[0];
-    if (!feat?.geometry?.coordinates) return null;
-    const [lng, lat] = feat.geometry.coordinates as [number, number];
-    if (typeof lat !== 'number' || typeof lng !== 'number') return null;
-    return { lat, lng };
-  } catch {
-    return null;
-  }
 }
 
 function makeIcon(color: string, pulse = false): L.DivIcon {
@@ -109,7 +91,9 @@ export function TripMapLeaflet({
   useEffect(() => {
     let cancelled = false;
     if (!pickup && pickupAddress) {
-      geocodeAddress(pickupAddress).then((c) => { if (!cancelled) setGeocodedPickup(c); });
+      geocodeAddress(pickupAddress).then((c) => {
+        if (!cancelled) setGeocodedPickup(c ? { lat: c.lat, lng: c.lng } : null);
+      });
     } else {
       setGeocodedPickup(null);
     }
@@ -119,7 +103,9 @@ export function TripMapLeaflet({
   useEffect(() => {
     let cancelled = false;
     if (!dropoff && dropoffAddress) {
-      geocodeAddress(dropoffAddress).then((c) => { if (!cancelled) setGeocodedDropoff(c); });
+      geocodeAddress(dropoffAddress).then((c) => {
+        if (!cancelled) setGeocodedDropoff(c ? { lat: c.lat, lng: c.lng } : null);
+      });
     } else {
       setGeocodedDropoff(null);
     }

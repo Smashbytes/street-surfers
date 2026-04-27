@@ -1,16 +1,15 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { AppLayout } from '@/components/AppLayout';
 import { useTrips } from '@/hooks/useTrips';
-import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { MapPin, Navigation, Clock, User } from 'lucide-react';
-import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from 'react-leaflet';
+import { AlertCircle, Clock, MapPin, Navigation, User } from 'lucide-react';
+import { MapContainer, Marker, Polyline, Popup, TileLayer, useMap } from 'react-leaflet';
 import L, { type LatLngExpression } from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { fetchRoute } from '@/lib/routing';
 
-// Fix default marker icons for Leaflet + bundlers
 delete (L.Icon.Default.prototype as any)._getIconUrl;
 L.Icon.Default.mergeOptions({
   iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
@@ -59,88 +58,55 @@ const dropoffIcon = makeDot('#22c55e');
 const driverIcon = makeDot('#d01c00', 'livemapDriverPulse', 20);
 const selfIcon = makeDot('#6366f1', 'livemapSelfPulse', 16);
 
-interface DriverLocation {
-  latitude: number;
-  longitude: number;
-  updated_at: string;
-}
-
 function FitToBounds({ points }: { points: LatLngExpression[] }) {
   const map = useMap();
+
   useEffect(() => {
     if (!points.length) return;
     if (points.length === 1) {
-      map.setView(points[0] as any, 15);
+      map.setView(points[0] as L.LatLngExpression, 15);
     } else {
-      map.fitBounds(points as any, { padding: [40, 40], maxZoom: 15 });
+      map.fitBounds(points as L.LatLngBoundsExpression, { padding: [40, 40], maxZoom: 15 });
     }
   }, [map, points]);
+
   return null;
 }
 
+const freshnessTone: Record<string, string> = {
+  fresh: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30',
+  stale: 'bg-amber-500/15 text-amber-300 border-amber-500/30',
+  offline: 'bg-destructive/15 text-destructive border-destructive/30',
+  missing: 'bg-muted text-muted-foreground border-border',
+};
+
 export default function LiveMap() {
-  const { getUpcomingTrips } = useTrips();
-  const activeTrip = getUpcomingTrips().find(t =>
-    t.status === 'driver_assigned' || t.status === 'in_progress'
-  );
-  const [driverLocation, setDriverLocation] = useState<DriverLocation | null>(null);
+  const { trips, getUpcomingTrips } = useTrips();
+  const [searchParams] = useSearchParams();
   const [selfLocation, setSelfLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [routeCoords, setRouteCoords] = useState<[number, number][] | null>(null);
 
-  useEffect(() => { ensurePulseCss(); }, []);
-
-  // Driver location subscription
   useEffect(() => {
-    if (!activeTrip?.driver_id) return;
+    ensurePulseCss();
+  }, []);
 
-    const fetchLocation = async () => {
-      const { data } = await supabase
-        .from('driver_locations')
-        .select('latitude, longitude, updated_at')
-        .eq('driver_id', activeTrip.driver_id!)
-        .maybeSingle();
-      if (data) setDriverLocation(data);
-    };
-    fetchLocation();
+  const requestedTripId = searchParams.get('trip');
+  const requestedTrip = requestedTripId ? trips.find((trip) => trip.id === requestedTripId) ?? null : null;
+  const fallbackLiveTrip = getUpcomingTrips().find(
+    (trip) => trip.status === 'driver_assigned' || trip.status === 'in_progress',
+  );
+  const activeTrip = requestedTrip ?? fallbackLiveTrip ?? null;
 
-    const channel = supabase
-      .channel(`driver-loc-${activeTrip.driver_id}`)
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'driver_locations',
-          filter: `driver_id=eq.${activeTrip.driver_id}`,
-        },
-        (payload) => {
-          const row = payload.new as any;
-          if (row?.latitude != null && row?.longitude != null) {
-            setDriverLocation({
-              latitude: row.latitude,
-              longitude: row.longitude,
-              updated_at: row.updated_at,
-            });
-          }
-        }
-      )
-      .subscribe();
-
-    return () => { supabase.removeChannel(channel); };
-  }, [activeTrip?.driver_id]);
-
-  // Passenger's own GPS (best effort, no prompt spam — browser prompts once per session)
   useEffect(() => {
     if (!activeTrip || !('geolocation' in navigator)) return;
     const watch = navigator.geolocation.watchPosition(
       (pos) => setSelfLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
-      () => { /* silently ignore — passenger can still see driver + pickup */ },
+      () => {},
       { enableHighAccuracy: true, maximumAge: 15000, timeout: 20000 },
     );
     return () => navigator.geolocation.clearWatch(watch);
   }, [activeTrip?.id]);
 
-  // Resolve pickup + dropoff from trip_passenger first, fall back to trip origin/destination
   const pickup = useMemo(() => {
     const tp = activeTrip?.trip_passenger;
     if (tp?.pickup_lat != null && tp?.pickup_lng != null) {
@@ -163,16 +129,24 @@ export default function LiveMap() {
     return null;
   }, [activeTrip]);
 
-  // Fetch pickup → dropoff route
+  const driverLocation = activeTrip?.driver_location ?? null;
+  const locationFreshness = activeTrip?.location_freshness ?? 'missing';
+  const etaMinutes = activeTrip?.trip_passenger?.eta_minutes ?? activeTrip?.eta_minutes ?? null;
+  const hasLiveDriver = !!driverLocation && (activeTrip?.status === 'driver_assigned' || activeTrip?.status === 'in_progress');
+
   useEffect(() => {
     let cancelled = false;
     setRouteCoords(null);
+
     if (pickup && dropoff) {
       fetchRoute([pickup, dropoff]).then((coords) => {
         if (!cancelled) setRouteCoords(coords);
       });
     }
-    return () => { cancelled = true; };
+
+    return () => {
+      cancelled = true;
+    };
   }, [pickup?.lat, pickup?.lng, dropoff?.lat, dropoff?.lng]);
 
   const boundsPoints = useMemo<LatLngExpression[]>(() => {
@@ -191,6 +165,13 @@ export default function LiveMap() {
     ? [driverLocation.latitude, driverLocation.longitude]
     : defaultCenter;
 
+  const liveStatusLabel =
+    activeTrip?.status === 'in_progress'
+      ? 'Trip In Progress'
+      : activeTrip?.status === 'driver_assigned'
+      ? 'Driver Assigned'
+      : 'Scheduled Preview';
+
   return (
     <AppLayout tripId={activeTrip?.id}>
       <div className="min-h-screen flex flex-col">
@@ -198,12 +179,14 @@ export default function LiveMap() {
           <div className="flex items-center justify-between">
             <div>
               <h1 className="text-xl font-display font-bold">Live Tracking</h1>
-              <p className="text-muted-foreground text-sm mt-0.5">Track your shuttle in real-time</p>
+              <p className="text-muted-foreground text-sm mt-0.5">
+                {requestedTripId ? 'Viewing the selected trip map' : 'Track your shuttle in real time'}
+              </p>
             </div>
             {activeTrip && (
-              <Badge className="bg-accent text-accent-foreground animate-pulse">
+              <Badge className={hasLiveDriver ? 'bg-accent text-accent-foreground animate-pulse' : 'bg-secondary text-foreground'}>
                 <Navigation className="h-3 w-3 mr-1" />
-                Live
+                {hasLiveDriver ? 'Live' : 'Preview'}
               </Badge>
             )}
           </div>
@@ -215,7 +198,7 @@ export default function LiveMap() {
               <MapContainer
                 center={mapCenter}
                 zoom={14}
-                className="h-[calc(100vh-200px)] w-full z-0"
+                className="h-[calc(100vh-220px)] w-full z-0"
                 zoomControl={false}
               >
                 <TileLayer
@@ -241,7 +224,9 @@ export default function LiveMap() {
                     <Popup>
                       <div className="text-center">
                         <p className="font-semibold">Pickup</p>
-                        <p className="text-xs text-gray-500">{activeTrip.trip_passenger.pickup_address ?? activeTrip.origin_address}</p>
+                        <p className="text-xs text-gray-500">
+                          {activeTrip.trip_passenger.pickup_address ?? activeTrip.origin_address}
+                        </p>
                       </div>
                     </Popup>
                   </Marker>
@@ -252,7 +237,9 @@ export default function LiveMap() {
                     <Popup>
                       <div className="text-center">
                         <p className="font-semibold">Drop-off</p>
-                        <p className="text-xs text-gray-500">{activeTrip.trip_passenger.dropoff_address ?? activeTrip.destination_address}</p>
+                        <p className="text-xs text-gray-500">
+                          {activeTrip.trip_passenger.dropoff_address ?? activeTrip.destination_address}
+                        </p>
                       </div>
                     </Popup>
                   </Marker>
@@ -284,7 +271,6 @@ export default function LiveMap() {
                 <FitToBounds points={boundsPoints} />
               </MapContainer>
 
-              {/* Legend */}
               <div className="pointer-events-none absolute left-3 top-3 z-[1000] flex flex-wrap gap-1.5 max-w-[calc(100%-24px)]">
                 <div className="inline-flex items-center gap-1.5 rounded-lg bg-background/90 px-2 py-1 text-[11px] font-semibold backdrop-blur">
                   <div className="h-2 w-2 rounded-full bg-blue-500" /> Pickup
@@ -304,27 +290,50 @@ export default function LiveMap() {
                 )}
               </div>
 
-              {/* Info overlay */}
-              <div className="absolute bottom-20 left-4 right-4 z-[1000] sm:bottom-4">
+              <div className="absolute bottom-20 left-4 right-4 z-[1000] space-y-3 sm:bottom-4">
+                {activeTrip.status !== 'scheduled' && (
+                  <Card className={`backdrop-blur border shadow-lg ${freshnessTone[locationFreshness] ?? freshnessTone.missing}`}>
+                    <CardContent className="p-3 flex items-start gap-3">
+                      <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
+                      <div className="min-w-0">
+                        <p className="font-semibold text-sm">
+                          {locationFreshness === 'fresh'
+                            ? 'Driver location is live'
+                            : locationFreshness === 'stale'
+                            ? 'Driver location is delayed'
+                            : locationFreshness === 'offline'
+                            ? 'Driver location is offline'
+                            : 'Waiting for driver location'}
+                        </p>
+                        <p className="text-xs opacity-90">
+                          {driverLocation
+                            ? `Last update: ${new Date(driverLocation.updated_at).toLocaleTimeString()}`
+                            : 'We will show the driver as soon as the app reports a live position.'}
+                        </p>
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+
                 <Card className="bg-card/95 backdrop-blur border-border shadow-lg">
                   <CardContent className="p-4">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-full bg-accent/20 flex items-center justify-center">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className="w-10 h-10 rounded-full bg-accent/20 flex items-center justify-center shrink-0">
                           <User className="h-5 w-5 text-accent" />
                         </div>
-                        <div>
-                          <p className="font-semibold text-sm">
-                            {activeTrip.status === 'in_progress' ? 'Trip In Progress' : 'Driver Assigned'}
-                          </p>
+                        <div className="min-w-0">
+                          <p className="font-semibold text-sm">{liveStatusLabel}</p>
                           <p className="text-xs text-muted-foreground">
-                            {driverLocation
-                              ? `Last update: ${new Date(driverLocation.updated_at).toLocaleTimeString()}`
-                              : 'Waiting for driver location...'}
+                            {etaMinutes != null
+                              ? `Estimated pickup in ${etaMinutes} min`
+                              : activeTrip.status === 'scheduled'
+                              ? 'Scheduled trip preview is ready'
+                              : 'ETA will appear when the trip is actively updating'}
                           </p>
                         </div>
                       </div>
-                      <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                      <div className="flex items-center gap-1 text-xs text-muted-foreground shrink-0">
                         <Clock className="h-3 w-3" />
                         <span>{activeTrip.pickup_time?.slice(0, 5)}</span>
                       </div>
@@ -338,9 +347,9 @@ export default function LiveMap() {
               <Card>
                 <CardContent className="p-8 text-center">
                   <MapPin className="h-12 w-12 text-muted-foreground mx-auto mb-3" />
-                  <p className="text-foreground font-medium">No active trip</p>
+                  <p className="text-foreground font-medium">No trip selected</p>
                   <p className="text-sm text-muted-foreground mt-1">
-                    Live tracking will be available when your driver starts the trip
+                    Choose an upcoming trip to see the route preview or live driver position
                   </p>
                 </CardContent>
               </Card>

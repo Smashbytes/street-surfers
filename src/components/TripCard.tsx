@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { TripWithDetails } from '@/hooks/useTrips';
 import { format, parseISO } from 'date-fns';
+import { TripMapLeaflet } from '@/components/TripMapLeaflet';
 
 interface TripCardProps {
   trip: TripWithDetails;
@@ -33,9 +34,22 @@ const statusLabels: Record<string, string> = {
 export function TripCard({ trip, showDriver = true, showActions = true, compact = false }: TripCardProps) {
   const pickupAddress = trip.trip_passenger?.pickup_address || trip.origin_address;
   const dropoffAddress = trip.trip_passenger?.dropoff_address || trip.destination_address;
-  
+
   const formattedDate = format(parseISO(trip.scheduled_date), 'EEE, MMM d');
   const formattedTime = trip.pickup_time.slice(0, 5);
+  const pickupCoords =
+    trip.trip_passenger?.pickup_lat != null && trip.trip_passenger?.pickup_lng != null
+      ? { lat: trip.trip_passenger.pickup_lat, lng: trip.trip_passenger.pickup_lng }
+      : trip.origin_lat != null && trip.origin_lng != null
+      ? { lat: trip.origin_lat, lng: trip.origin_lng }
+      : undefined;
+  const dropoffCoords =
+    trip.trip_passenger?.dropoff_lat != null && trip.trip_passenger?.dropoff_lng != null
+      ? { lat: trip.trip_passenger.dropoff_lat, lng: trip.trip_passenger.dropoff_lng }
+      : trip.destination_lat != null && trip.destination_lng != null
+      ? { lat: trip.destination_lat, lng: trip.destination_lng }
+      : undefined;
+  const hasPreview = !!pickupCoords || !!dropoffCoords || !!pickupAddress || !!dropoffAddress;
 
   return (
     <Card className="bg-card border-border overflow-hidden hover:border-accent/50 transition-colors">
@@ -111,6 +125,24 @@ export function TripCard({ trip, showDriver = true, showActions = true, compact 
             </div>
           </div>
         </div>
+
+        {!compact && hasPreview && (
+          <div className="mb-4 overflow-hidden rounded-xl border border-border/80">
+            <TripMapLeaflet
+              pickup={pickupCoords}
+              dropoff={dropoffCoords}
+              pickupAddress={pickupAddress}
+              dropoffAddress={dropoffAddress}
+              driver={
+                trip.driver_location
+                  ? { lat: trip.driver_location.latitude, lng: trip.driver_location.longitude }
+                  : undefined
+              }
+              status={trip.status}
+              height={144}
+            />
+          </div>
+        )}
 
         {/* Driver Info */}
         {showDriver && trip.driver && (
